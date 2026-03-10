@@ -3,7 +3,6 @@ use tree_sitter::{Node, Tree};
 use crate::analyzer::ast_utils::{is_function_node, node_column, node_line, SourceLanguage};
 use crate::types::{Issue, Severity};
 
-/// max-lines: Warn if a file exceeds a maximum number of lines.
 pub fn check_max_lines(
     _tree: &Tree,
     source: &[u8],
@@ -26,89 +25,62 @@ pub fn check_max_lines(
     }
 }
 
-fn is_depth_increasing_js(kind: &str) -> bool {
-    matches!(
-        kind,
-        "if_statement"
-            | "for_statement"
-            | "for_in_statement"
-            | "while_statement"
-            | "do_statement"
-            | "switch_statement"
-    )
-}
-
-fn is_depth_increasing_rust(kind: &str) -> bool {
-    matches!(
-        kind,
-        "if_expression"
-            | "for_expression"
-            | "while_expression"
-            | "loop_expression"
-            | "match_expression"
-    )
-}
-
-/// max-depth with language awareness.
-pub fn check_max_depth_for_language(
-    tree: &Tree,
-    source: &[u8],
-    file_path: &str,
+struct DepthCtx<'a> {
+    file_path: &'a str,
     severity: Severity,
     max: usize,
-    language: SourceLanguage,
-) -> Vec<Issue> {
-    let mut issues = Vec::new();
+    is_rust: bool,
+    issues: Vec<Issue>,
+}
 
-    fn walk(
-        node: &Node,
-        depth: usize,
-        file_path: &str,
-        severity: Severity,
-        max: usize,
-        is_rust: bool,
-        issues: &mut Vec<Issue>,
-    ) {
+impl<'a> DepthCtx<'a> {
+    fn walk(&mut self, node: &Node, depth: usize) {
         let kind = node.kind();
-        let increases = if is_rust {
-            is_depth_increasing_rust(kind)
+        let increases = if self.is_rust {
+            matches!(kind, "if_expression" | "for_expression" | "while_expression" | "loop_expression" | "match_expression")
         } else {
-            is_depth_increasing_js(kind)
+            matches!(kind, "if_statement" | "for_statement" | "for_in_statement" | "while_statement" | "do_statement" | "switch_statement")
         };
 
         let new_depth = if increases { depth + 1 } else { depth };
 
-        if increases && new_depth > max {
-            issues.push(Issue {
-                file: file_path.to_string(),
+        if increases && new_depth > self.max {
+            self.issues.push(Issue {
+                file: self.file_path.to_string(),
                 line: node_line(node),
                 column: node_column(node),
-                severity,
+                severity: self.severity,
                 rule: "max-depth".to_string(),
-                message: format!("Nesting depth {new_depth} exceeds max of {max}"),
+                message: format!("Nesting depth {new_depth} exceeds max of {}", self.max),
             });
         }
 
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            walk(&child, new_depth, file_path, severity, max, is_rust, issues);
+            self.walk(&child, new_depth);
         }
     }
+}
 
-    let _ = source;
-    walk(
-        &tree.root_node(),
-        0,
+pub fn check_max_depth_for_language(
+    tree: &Tree,
+    _source: &[u8],
+    file_path: &str,
+    severity: Severity,
+    max: usize,
+    language: SourceLanguage,
+) -> Vec<Issue> {
+    let mut ctx = DepthCtx {
         file_path,
         severity,
         max,
-        language.is_rust(),
-        &mut issues,
-    );
-    issues
+        is_rust: language.is_rust(),
+        issues: Vec::new(),
+    };
+    ctx.walk(&tree.root_node(), 0);
+    ctx.issues
 }
 
-/// max-depth: JS/TS version (backward compat).
 pub fn check_max_depth(
     tree: &Tree,
     source: &[u8],
@@ -119,70 +91,60 @@ pub fn check_max_depth(
     check_max_depth_for_language(tree, source, file_path, severity, max, SourceLanguage::JavaScript)
 }
 
-/// max-params: Warn if a function has too many parameters.
-/// Works for both JS/TS and Rust.
-pub fn check_max_params(
-    tree: &Tree,
-    source: &[u8],
-    file_path: &str,
+struct ParamsCtx<'a> {
+    file_path: &'a str,
     severity: Severity,
     max: usize,
-) -> Vec<Issue> {
-    let mut issues = Vec::new();
+    issues: Vec<Issue>,
+}
 
-    fn visit(
-        node: &Node,
-        source: &[u8],
-        file_path: &str,
-        severity: Severity,
-        max: usize,
-        issues: &mut Vec<Issue>,
-    ) {
+impl<'a> ParamsCtx<'a> {
+    fn visit(&mut self, node: &Node) {
         if is_function_node(node) {
             if let Some(params) = node.child_by_field_name("parameters") {
                 let count = count_params(&params);
-                if count > max {
-                    issues.push(Issue {
-                        file: file_path.to_string(),
+                if count > self.max {
+                    self.issues.push(Issue {
+                        file: self.file_path.to_string(),
                         line: node_line(node),
                         column: node_column(node),
-                        severity,
+                        severity: self.severity,
                         rule: "max-params".to_string(),
-                        message: format!("Function has {count} parameters (max: {max})"),
+                        message: format!("Function has {count} parameters (max: {})", self.max),
                     });
                 }
             }
         }
-
-        let _ = source;
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            visit(&child, source, file_path, severity, max, issues);
+            self.visit(&child);
         }
     }
+}
 
-    visit(&tree.root_node(), source, file_path, severity, max, &mut issues);
-    issues
+pub fn check_max_params(
+    tree: &Tree,
+    _source: &[u8],
+    file_path: &str,
+    severity: Severity,
+    max: usize,
+) -> Vec<Issue> {
+    let mut ctx = ParamsCtx {
+        file_path,
+        severity,
+        max,
+        issues: Vec::new(),
+    };
+    ctx.visit(&tree.root_node());
+    ctx.issues
 }
 
 fn count_params(params: &Node) -> usize {
-    let mut count = 0;
     let mut cursor = params.walk();
-    for child in params.children(&mut cursor) {
-        let k = child.kind();
-        // Skip delimiters and non-parameter nodes
-        if k == "("
-            || k == ")"
-            || k == ","
-            || k == "|"       // Rust closure delimiters
-            || k == "comment"
-            || k == "line_comment"
-            || k == "block_comment"
-        {
-            continue;
-        }
-        // Rust: self_parameter counts as a parameter
-        count += 1;
-    }
-    count
+    params
+        .children(&mut cursor)
+        .filter(|c| {
+            !matches!(c.kind(), "(" | ")" | "," | "|" | "comment" | "line_comment" | "block_comment")
+        })
+        .count()
 }

@@ -168,131 +168,124 @@ fn is_break_continue(kind: &str) -> bool {
     )
 }
 
+struct CogCtx<'a> {
+    func_node_id: usize,
+    source: &'a [u8],
+    complexity: usize,
+}
+
+impl<'a> CogCtx<'a> {
+    fn new(func_node: &Node, source: &'a [u8]) -> Self {
+        Self {
+            func_node_id: func_node.id(),
+            source,
+            complexity: 0,
+        }
+    }
+
+    fn walk(&mut self, node: &Node, nesting: usize) {
+        if node.id() != self.func_node_id && is_function_node(node) {
+            return;
+        }
+
+        let kind = node.kind();
+
+        if is_if_node(kind) {
+            self.handle_if(node, nesting);
+            return;
+        }
+
+        if is_nesting_construct(kind) {
+            self.complexity += 1 + nesting;
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                self.walk(&child, nesting + 1);
+            }
+            return;
+        }
+
+        if is_top_level_logical(node, self.source) {
+            self.complexity += count_logical_op_switches(node, self.source);
+            return;
+        }
+
+        if is_break_continue(kind) && node.child_count() > 1 {
+            if let Some(label) = node.child_by_field_name("label") {
+                if !label.utf8_text(self.source).unwrap_or("").is_empty() {
+                    self.complexity += 1;
+                }
+            }
+        }
+
+        if kind == "optional_chain" {
+            self.complexity += 1;
+        }
+
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            self.walk(&child, nesting);
+        }
+    }
+
+    fn handle_if(&mut self, node: &Node, nesting: usize) {
+        let is_else_if = node
+            .parent()
+            .map(|p| p.kind() == "else_clause")
+            .unwrap_or(false);
+
+        if is_else_if {
+            self.complexity += 1;
+        } else {
+            self.complexity += 1 + nesting;
+        }
+
+        if let Some(condition) = node.child_by_field_name("condition") {
+            let expr = if condition.kind() == "parenthesized_expression" {
+                condition.child(1).unwrap_or(condition)
+            } else {
+                condition
+            };
+            self.complexity += count_logical_op_switches(&expr, self.source);
+        }
+
+        if let Some(consequence) = node.child_by_field_name("consequence") {
+            let mut cursor = consequence.walk();
+            for child in consequence.children(&mut cursor) {
+                self.walk(&child, nesting + 1);
+            }
+        }
+
+        if let Some(alternative) = node.child_by_field_name("alternative") {
+            let mut cursor = alternative.walk();
+            let children: Vec<_> = alternative.children(&mut cursor).collect();
+            let has_else_if = children.iter().any(|c| is_if_node(c.kind()));
+
+            if has_else_if {
+                for child in &children {
+                    if is_if_node(child.kind()) {
+                        self.handle_if(child, nesting);
+                    }
+                }
+            } else {
+                self.complexity += 1;
+                for child in &children {
+                    self.walk(child, nesting + 1);
+                }
+            }
+        }
+    }
+}
+
 /// Calculate cognitive complexity for a function node.
 fn calculate_cognitive_complexity(func_node: &Node, source: &[u8]) -> usize {
-    let mut complexity: usize = 0;
+    let mut ctx = CogCtx::new(func_node, source);
 
     let mut cursor = func_node.walk();
     for child in func_node.children(&mut cursor) {
-        walk_cognitive(&child, func_node, 0, &mut complexity, source);
+        ctx.walk(&child, 0);
     }
 
-    complexity
-}
-
-fn walk_cognitive(
-    node: &Node,
-    func_node: &Node,
-    nesting: usize,
-    complexity: &mut usize,
-    source: &[u8],
-) {
-    if node.id() != func_node.id() && is_function_node(node) {
-        return;
-    }
-
-    let kind = node.kind();
-
-    if is_if_node(kind) {
-        handle_if_statement(node, func_node, nesting, complexity, source);
-        return;
-    }
-
-    if is_nesting_construct(kind) {
-        *complexity += 1 + nesting;
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            walk_cognitive(&child, func_node, nesting + 1, complexity, source);
-        }
-        return;
-    }
-
-    if is_top_level_logical(node, source) {
-        *complexity += count_logical_op_switches(node, source);
-        return;
-    }
-
-    if is_break_continue(kind) && node.child_count() > 1 {
-        if let Some(label) = node.child_by_field_name("label") {
-            if !label.utf8_text(source).unwrap_or("").is_empty() {
-                *complexity += 1;
-            }
-        }
-    }
-
-    // JS/TS optional chaining
-    if kind == "optional_chain" {
-        *complexity += 1;
-    }
-
-    // Rust: ? operator (try_expression)
-    if kind == "try_expression" {
-        // Don't add complexity for ? — it's idiomatic Rust
-    }
-
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        walk_cognitive(&child, func_node, nesting, complexity, source);
-    }
-}
-
-fn handle_if_statement(
-    node: &Node,
-    func_node: &Node,
-    nesting: usize,
-    complexity: &mut usize,
-    source: &[u8],
-) {
-    // Detect else-if: parent is else_clause (JS) or the alternative field of parent if_expression (Rust)
-    let is_else_if = node
-        .parent()
-        .map(|p| p.kind() == "else_clause")
-        .unwrap_or(false);
-
-    if is_else_if {
-        *complexity += 1;
-    } else {
-        *complexity += 1 + nesting;
-    }
-
-    // Count logical operator switches in condition
-    if let Some(condition) = node.child_by_field_name("condition") {
-        let expr = if condition.kind() == "parenthesized_expression" {
-            condition.child(1).unwrap_or(condition)
-        } else {
-            condition
-        };
-        *complexity += count_logical_op_switches(&expr, source);
-    }
-
-    // Walk the "then" branch (consequence) with nesting + 1
-    if let Some(consequence) = node.child_by_field_name("consequence") {
-        let mut cursor = consequence.walk();
-        for child in consequence.children(&mut cursor) {
-            walk_cognitive(&child, func_node, nesting + 1, complexity, source);
-        }
-    }
-
-    // Handle else / else-if
-    if let Some(alternative) = node.child_by_field_name("alternative") {
-        let mut cursor = alternative.walk();
-        let children: Vec<_> = alternative.children(&mut cursor).collect();
-
-        let has_else_if = children.iter().any(|c| is_if_node(c.kind()));
-
-        if has_else_if {
-            for child in &children {
-                if is_if_node(child.kind()) {
-                    handle_if_statement(child, func_node, nesting, complexity, source);
-                }
-            }
-        } else {
-            *complexity += 1;
-            for child in &children {
-                walk_cognitive(child, func_node, nesting + 1, complexity, source);
-            }
-        }
-    }
+    ctx.complexity
 }
 
 pub fn analyze_complexity(tree: &Tree, source: &[u8]) -> ComplexityResult {

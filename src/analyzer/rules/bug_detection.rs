@@ -1,126 +1,66 @@
-use tree_sitter::{Node, Tree};
+use tree_sitter::Tree;
 
-use crate::analyzer::ast_utils::{node_column, node_line, node_text};
+use crate::analyzer::ast_utils::node_text;
 use crate::types::{Issue, Severity};
 
-/// no-debugger: Disallow `debugger` statements.
-pub fn check_no_debugger(tree: &Tree, source: &[u8], file_path: &str, severity: Severity) -> Vec<Issue> {
-    let mut issues = Vec::new();
-    fn visit(node: &Node, source: &[u8], file_path: &str, severity: Severity, issues: &mut Vec<Issue>) {
+use super::run_check;
+
+pub fn check_no_debugger(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
+    run_check(tree, source, fp, sev, |node, ctx| {
         if node.kind() == "debugger_statement" {
-            issues.push(Issue {
-                file: file_path.to_string(),
-                line: node_line(node),
-                column: node_column(node),
-                severity,
-                rule: "no-debugger".to_string(),
-                message: "Unexpected 'debugger' statement".to_string(),
-            });
+            ctx.report(node, "no-debugger", "Unexpected 'debugger' statement".into());
         }
-        let _ = source;
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            visit(&child, source, file_path, severity, issues);
-        }
-    }
-    visit(&tree.root_node(), source, file_path, severity, &mut issues);
-    issues
+    })
 }
 
-/// no-duplicate-case: Disallow duplicate case labels in switch.
-pub fn check_no_duplicate_case(tree: &Tree, source: &[u8], file_path: &str, severity: Severity) -> Vec<Issue> {
-    let mut issues = Vec::new();
-    fn visit(node: &Node, source: &[u8], file_path: &str, severity: Severity, issues: &mut Vec<Issue>) {
+pub fn check_no_duplicate_case(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
+    run_check(tree, source, fp, sev, |node, ctx| {
         if node.kind() == "switch_body" {
             let mut seen = std::collections::HashSet::new();
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 if child.kind() == "switch_case" {
-                    // Get the test expression (first named child that isn't "case" keyword)
                     if let Some(value) = child.child_by_field_name("value") {
-                        let text = node_text(&value, source).to_string();
+                        let text = node_text(&value, ctx.source).to_string();
                         if !seen.insert(text.clone()) {
-                            issues.push(Issue {
-                                file: file_path.to_string(),
-                                line: node_line(&child),
-                                column: node_column(&child),
-                                severity,
-                                rule: "no-duplicate-case".to_string(),
-                                message: format!("Duplicate case label: {text}"),
-                            });
+                            ctx.report(&child, "no-duplicate-case", format!("Duplicate case label: {text}"));
                         }
                     }
                 }
             }
         }
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            visit(&child, source, file_path, severity, issues);
-        }
-    }
-    visit(&tree.root_node(), source, file_path, severity, &mut issues);
-    issues
+    })
 }
 
-/// no-self-assign: Disallow `x = x`.
-pub fn check_no_self_assign(tree: &Tree, source: &[u8], file_path: &str, severity: Severity) -> Vec<Issue> {
-    let mut issues = Vec::new();
-    fn visit(node: &Node, source: &[u8], file_path: &str, severity: Severity, issues: &mut Vec<Issue>) {
+pub fn check_no_self_assign(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
+    run_check(tree, source, fp, sev, |node, ctx| {
         if node.kind() == "assignment_expression" {
             if let Some(op) = node.child_by_field_name("operator") {
-                if node_text(&op, source) == "=" {
+                if node_text(&op, ctx.source) == "=" {
                     if let (Some(left), Some(right)) = (
                         node.child_by_field_name("left"),
                         node.child_by_field_name("right"),
                     ) {
-                        let left_text = node_text(&left, source);
-                        let right_text = node_text(&right, source);
-                        if left_text == right_text {
-                            issues.push(Issue {
-                                file: file_path.to_string(),
-                                line: node_line(node),
-                                column: node_column(node),
-                                severity,
-                                rule: "no-self-assign".to_string(),
-                                message: format!("'{left_text}' is assigned to itself"),
-                            });
+                        let lt = node_text(&left, ctx.source);
+                        let rt = node_text(&right, ctx.source);
+                        if lt == rt {
+                            ctx.report(node, "no-self-assign", format!("'{lt}' is assigned to itself"));
                         }
                     }
                 }
             }
         }
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            visit(&child, source, file_path, severity, issues);
-        }
-    }
-    visit(&tree.root_node(), source, file_path, severity, &mut issues);
-    issues
+    })
 }
 
-/// no-eval: Disallow `eval()`.
-pub fn check_no_eval(tree: &Tree, source: &[u8], file_path: &str, severity: Severity) -> Vec<Issue> {
-    let mut issues = Vec::new();
-    fn visit(node: &Node, source: &[u8], file_path: &str, severity: Severity, issues: &mut Vec<Issue>) {
+pub fn check_no_eval(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
+    run_check(tree, source, fp, sev, |node, ctx| {
         if node.kind() == "call_expression" {
             if let Some(callee) = node.child_by_field_name("function") {
-                if callee.kind() == "identifier" && node_text(&callee, source) == "eval" {
-                    issues.push(Issue {
-                        file: file_path.to_string(),
-                        line: node_line(node),
-                        column: node_column(node),
-                        severity,
-                        rule: "no-eval".to_string(),
-                        message: "eval() is not allowed".to_string(),
-                    });
+                if callee.kind() == "identifier" && node_text(&callee, ctx.source) == "eval" {
+                    ctx.report(node, "no-eval", "eval() is not allowed".into());
                 }
             }
         }
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            visit(&child, source, file_path, severity, issues);
-        }
-    }
-    visit(&tree.root_node(), source, file_path, severity, &mut issues);
-    issues
+    })
 }

@@ -49,6 +49,52 @@ const RUST_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
 /// Rules that apply to all languages.
 const UNIVERSAL_RULES: &[(&str, Severity, SimpleCheckFn)] = &[];
 
+struct LintCtx<'a> {
+    tree: &'a Tree,
+    source_bytes: &'a [u8],
+    file_path: &'a str,
+    config: &'a CodopsyConfig,
+    issues: Vec<Issue>,
+}
+
+impl<'a> LintCtx<'a> {
+    fn run_rules(&mut self, rules: &[(&str, Severity, SimpleCheckFn)]) {
+        for &(name, default_severity, check_fn) in rules {
+            if self.config.is_rule_disabled(name) {
+                continue;
+            }
+            let severity = self.config.get_rule_severity(name).unwrap_or(default_severity);
+            self.issues.extend(check_fn(self.tree, self.source_bytes, self.file_path, severity));
+        }
+    }
+
+    fn run_threshold_rules(&mut self, language: SourceLanguage) {
+        self.run_threshold("max-lines", DEFAULT_MAX_LINES, |t, s, f, sev, max| {
+            check_max_lines(t, s, f, sev, max)
+        });
+        self.run_threshold("max-depth", DEFAULT_MAX_DEPTH, |t, s, f, sev, max| {
+            check_max_depth_for_language(t, s, f, sev, max, language)
+        });
+        self.run_threshold("max-params", DEFAULT_MAX_PARAMS, |t, s, f, sev, max| {
+            check_max_params(t, s, f, sev, max)
+        });
+    }
+
+    fn run_threshold(
+        &mut self,
+        name: &str,
+        default_max: usize,
+        check: impl FnOnce(&Tree, &[u8], &str, Severity, usize) -> Vec<Issue>,
+    ) {
+        if self.config.is_rule_disabled(name) {
+            return;
+        }
+        let severity = self.config.get_rule_severity(name).unwrap_or(Severity::Warning);
+        let max = self.config.get_rule_max(name).unwrap_or(default_max);
+        self.issues.extend(check(self.tree, self.source_bytes, self.file_path, severity, max));
+    }
+}
+
 pub fn lint_file(
     file_path: &str,
     source: &str,
@@ -56,80 +102,23 @@ pub fn lint_file(
     config: &CodopsyConfig,
     language: SourceLanguage,
 ) -> Vec<Issue> {
-    let source_bytes = source.as_bytes();
-    let mut issues = Vec::new();
+    let mut ctx = LintCtx {
+        tree,
+        source_bytes: source.as_bytes(),
+        file_path,
+        config,
+        issues: Vec::new(),
+    };
 
-    // Run universal rules
-    run_simple_rules(UNIVERSAL_RULES, tree, source_bytes, file_path, config, &mut issues);
+    ctx.run_rules(UNIVERSAL_RULES);
 
-    // Run language-specific rules
     if language.is_js_ts() {
-        run_simple_rules(JS_TS_RULES, tree, source_bytes, file_path, config, &mut issues);
+        ctx.run_rules(JS_TS_RULES);
     } else if language.is_rust() {
-        run_simple_rules(RUST_RULES, tree, source_bytes, file_path, config, &mut issues);
+        ctx.run_rules(RUST_RULES);
     }
 
-    // Threshold rules (language-agnostic)
-    run_threshold_rules(tree, source_bytes, file_path, config, &mut issues, language);
+    ctx.run_threshold_rules(language);
 
-    issues
-}
-
-fn run_simple_rules(
-    rules: &[(&str, Severity, SimpleCheckFn)],
-    tree: &Tree,
-    source_bytes: &[u8],
-    file_path: &str,
-    config: &CodopsyConfig,
-    issues: &mut Vec<Issue>,
-) {
-    for &(name, default_severity, check_fn) in rules {
-        if config.is_rule_disabled(name) {
-            continue;
-        }
-        let severity = config.get_rule_severity(name).unwrap_or(default_severity);
-        issues.extend(check_fn(tree, source_bytes, file_path, severity));
-    }
-}
-
-fn run_threshold_rules(
-    tree: &Tree,
-    source_bytes: &[u8],
-    file_path: &str,
-    config: &CodopsyConfig,
-    issues: &mut Vec<Issue>,
-    language: SourceLanguage,
-) {
-    if !config.is_rule_disabled("max-lines") {
-        let severity = config
-            .get_rule_severity("max-lines")
-            .unwrap_or(Severity::Warning);
-        let max = config.get_rule_max("max-lines").unwrap_or(DEFAULT_MAX_LINES);
-        issues.extend(check_max_lines(tree, source_bytes, file_path, severity, max));
-    }
-
-    if !config.is_rule_disabled("max-depth") {
-        let severity = config
-            .get_rule_severity("max-depth")
-            .unwrap_or(Severity::Warning);
-        let max = config.get_rule_max("max-depth").unwrap_or(DEFAULT_MAX_DEPTH);
-        issues.extend(check_max_depth_for_language(
-            tree,
-            source_bytes,
-            file_path,
-            severity,
-            max,
-            language,
-        ));
-    }
-
-    if !config.is_rule_disabled("max-params") {
-        let severity = config
-            .get_rule_severity("max-params")
-            .unwrap_or(Severity::Warning);
-        let max = config
-            .get_rule_max("max-params")
-            .unwrap_or(DEFAULT_MAX_PARAMS);
-        issues.extend(check_max_params(tree, source_bytes, file_path, severity, max));
-    }
+    ctx.issues
 }

@@ -75,74 +75,64 @@ pub fn is_function_node(node: &Node) -> bool {
 pub fn get_function_name<'a>(node: &Node<'a>, source: &'a [u8]) -> String {
     let kind = node.kind();
 
-    // --- Rust ---
-    if kind == "function_item" {
+    match kind {
+        "function_item" | "function_declaration" | "generator_function_declaration" => {
+            name_field_or(node, source, "(anonymous)")
+        }
+        "closure_expression" => name_from_closure(node, source),
+        "method_definition" => name_from_method(node, source),
+        "arrow_function" | "function_expression" | "function" | "generator_function" => {
+            name_from_expr(node, source)
+        }
+        _ => "(anonymous)".to_string(),
+    }
+}
+
+fn name_field_or(node: &Node, source: &[u8], fallback: &str) -> String {
+    node.child_by_field_name("name")
+        .map(|n| node_text(&n, source).to_string())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+fn name_from_closure(node: &Node, source: &[u8]) -> String {
+    node.parent()
+        .filter(|p| p.kind() == "let_declaration")
+        .and_then(|p| p.child_by_field_name("pattern"))
+        .map(|pat| node_text(&pat, source).to_string())
+        .unwrap_or_else(|| "(closure)".to_string())
+}
+
+fn name_from_method(node: &Node, source: &[u8]) -> String {
+    let Some(name_node) = node.child_by_field_name("name") else {
+        return "(anonymous)".to_string();
+    };
+    let text = node_text(&name_node, source);
+    if let Some(first_child) = node.child(0) {
+        let prefix = node_text(&first_child, source);
+        if prefix == "get" || prefix == "set" {
+            return format!("{prefix} {text}");
+        }
+    }
+    text.to_string()
+}
+
+fn name_from_expr(node: &Node, source: &[u8]) -> String {
+    let kind = node.kind();
+    if kind == "function_expression" || kind == "function" {
         if let Some(name_node) = node.child_by_field_name("name") {
             return node_text(&name_node, source).to_string();
         }
-        return "(anonymous)".to_string();
     }
-    if kind == "closure_expression" {
-        // Check parent: let_declaration -> pattern -> identifier
-        if let Some(parent) = node.parent() {
-            if parent.kind() == "let_declaration" {
-                if let Some(pat) = parent.child_by_field_name("pattern") {
-                    return node_text(&pat, source).to_string();
-                }
-            }
+    if let Some(parent) = node.parent() {
+        let field = match parent.kind() {
+            "variable_declarator" => "name",
+            "pair" => "key",
+            _ => return "(anonymous)".to_string(),
+        };
+        if let Some(n) = parent.child_by_field_name(field) {
+            return node_text(&n, source).to_string();
         }
-        return "(closure)".to_string();
     }
-
-    // --- JS/TS ---
-    if kind == "function_declaration" || kind == "generator_function_declaration" {
-        if let Some(name_node) = node.child_by_field_name("name") {
-            return node_text(&name_node, source).to_string();
-        }
-        return "(anonymous)".to_string();
-    }
-
-    if kind == "method_definition" {
-        if let Some(name_node) = node.child_by_field_name("name") {
-            let text = node_text(&name_node, source);
-            if let Some(first_child) = node.child(0) {
-                let first_text = node_text(&first_child, source);
-                if first_text == "get" || first_text == "set" {
-                    return format!("{first_text} {text}");
-                }
-            }
-            return text.to_string();
-        }
-        return "(anonymous)".to_string();
-    }
-
-    if kind == "arrow_function"
-        || kind == "function_expression"
-        || kind == "function"
-        || kind == "generator_function"
-    {
-        if kind == "function_expression" || kind == "function" {
-            if let Some(name_node) = node.child_by_field_name("name") {
-                return node_text(&name_node, source).to_string();
-            }
-        }
-
-        if let Some(parent) = node.parent() {
-            if parent.kind() == "variable_declarator" {
-                if let Some(name_node) = parent.child_by_field_name("name") {
-                    return node_text(&name_node, source).to_string();
-                }
-            }
-            if parent.kind() == "pair" {
-                if let Some(key_node) = parent.child_by_field_name("key") {
-                    return node_text(&key_node, source).to_string();
-                }
-            }
-        }
-
-        return "(anonymous)".to_string();
-    }
-
     "(anonymous)".to_string()
 }
 
