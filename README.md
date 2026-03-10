@@ -1,6 +1,6 @@
 # codopsy
 
-AST-level code quality analyzer for 24 languages. Uses [tree-sitter](https://tree-sitter.github.io/) to parse source code into ASTs and analyzes complexity, lint issues, and structural quality — without executing code.
+AST-level code quality analyzer for 25 languages. Uses [tree-sitter](https://tree-sitter.github.io/) to parse source code into ASTs and analyzes complexity, lint issues, and structural quality — without executing code.
 
 ## Supported Languages
 
@@ -30,6 +30,7 @@ AST-level code quality analyzer for 24 languages. Uses [tree-sitter](https://tre
 | Zig | `.zig` | threshold | CC + Cognitive |
 | Elixir | `.ex` `.exs` | threshold | CC + Cognitive |
 | YAML | `.yml` `.yaml` | threshold | structure |
+| Almide | `.almd` | threshold | CC + Cognitive |
 
 ## Install
 
