@@ -6,45 +6,114 @@ pub enum SourceLanguage {
     Tsx,
     JavaScript,
     Rust,
+    Go,
+    Python,
+    C,
+    Cpp,
+    Java,
+    Ruby,
+    CSharp,
+    Php,
+    Scala,
+    Haskell,
+    Bash,
+    Html,
+    Css,
+    Json,
+    OCaml,
 }
 
 impl SourceLanguage {
     pub fn is_js_ts(&self) -> bool {
-        matches!(
-            self,
-            SourceLanguage::TypeScript | SourceLanguage::Tsx | SourceLanguage::JavaScript
-        )
+        matches!(self, Self::TypeScript | Self::Tsx | Self::JavaScript)
     }
 
     pub fn is_rust(&self) -> bool {
-        matches!(self, SourceLanguage::Rust)
+        matches!(self, Self::Rust)
+    }
+
+    pub fn is_c_family(&self) -> bool {
+        matches!(self, Self::C | Self::Cpp | Self::CSharp | Self::Java)
+    }
+
+    pub fn is_markup_or_data(&self) -> bool {
+        matches!(self, Self::Html | Self::Css | Self::Json)
+    }
+
+    pub fn name(&self) -> &'static str {
+        LANGUAGE_NAMES[*self as usize]
+    }
+
+    pub fn tree_sitter_language(&self) -> Language {
+        use SourceLanguage::*;
+        match self {
+            TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
+            JavaScript => tree_sitter_javascript::LANGUAGE.into(),
+            Rust => tree_sitter_rust::LANGUAGE.into(),
+            Go => tree_sitter_go::LANGUAGE.into(),
+            Python => tree_sitter_python::LANGUAGE.into(),
+            C => tree_sitter_c::LANGUAGE.into(),
+            Cpp => tree_sitter_cpp::LANGUAGE.into(),
+            Java => tree_sitter_java::LANGUAGE.into(),
+            Ruby => tree_sitter_ruby::LANGUAGE.into(),
+            CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
+            Php => tree_sitter_php::LANGUAGE_PHP.into(),
+            Scala => tree_sitter_scala::LANGUAGE.into(),
+            Haskell => tree_sitter_haskell::LANGUAGE.into(),
+            Bash => tree_sitter_bash::LANGUAGE.into(),
+            Html => tree_sitter_html::LANGUAGE.into(),
+            Css => tree_sitter_css::LANGUAGE.into(),
+            Json => tree_sitter_json::LANGUAGE.into(),
+            OCaml => tree_sitter_ocaml::LANGUAGE_OCAML.into(),
+        }
     }
 }
 
-pub fn get_language(file_path: &str) -> SourceLanguage {
-    if file_path.ends_with(".tsx") {
-        SourceLanguage::Tsx
-    } else if file_path.ends_with(".ts") {
-        SourceLanguage::TypeScript
-    } else if file_path.ends_with(".rs") {
-        SourceLanguage::Rust
-    } else {
-        SourceLanguage::JavaScript
+const LANGUAGE_NAMES: &[&str] = &[
+    "TypeScript", "TSX", "JavaScript", "Rust", "Go", "Python",
+    "C", "C++", "Java", "Ruby", "C#", "PHP", "Scala", "Haskell",
+    "Bash", "HTML", "CSS", "JSON", "OCaml",
+];
+
+pub fn get_language(file_path: &str) -> Option<SourceLanguage> {
+    // Handle multi-part extensions first
+    let path = file_path.to_lowercase();
+    if path.ends_with(".d.ts") || path.ends_with(".d.tsx") {
+        return None; // Declaration files, skip
     }
+
+    let ext = path.rsplit('.').next()?;
+    EXT_LANGUAGE_MAP.iter()
+        .find(|(exts, _)| exts.contains(&ext))
+        .map(|(_, lang)| *lang)
 }
 
-fn get_ts_language(lang: &SourceLanguage) -> Language {
-    match lang {
-        SourceLanguage::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        SourceLanguage::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
-        SourceLanguage::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
-        SourceLanguage::Rust => tree_sitter_rust::LANGUAGE.into(),
-    }
-}
+const EXT_LANGUAGE_MAP: &[(&[&str], SourceLanguage)] = &[
+    (&["tsx"], SourceLanguage::Tsx),
+    (&["ts"], SourceLanguage::TypeScript),
+    (&["js", "jsx", "mjs", "cjs"], SourceLanguage::JavaScript),
+    (&["rs"], SourceLanguage::Rust),
+    (&["go"], SourceLanguage::Go),
+    (&["py", "pyi"], SourceLanguage::Python),
+    (&["cpp", "cc", "cxx", "hpp", "hxx"], SourceLanguage::Cpp),
+    (&["c", "h"], SourceLanguage::C),
+    (&["java"], SourceLanguage::Java),
+    (&["rb"], SourceLanguage::Ruby),
+    (&["cs"], SourceLanguage::CSharp),
+    (&["php"], SourceLanguage::Php),
+    (&["scala", "sc"], SourceLanguage::Scala),
+    (&["hs"], SourceLanguage::Haskell),
+    (&["sh", "bash", "zsh"], SourceLanguage::Bash),
+    (&["html", "htm"], SourceLanguage::Html),
+    (&["css"], SourceLanguage::Css),
+    (&["json"], SourceLanguage::Json),
+    (&["ml", "mli"], SourceLanguage::OCaml),
+];
 
 pub fn parse_source(source: &str, language: SourceLanguage) -> Option<Tree> {
     let mut parser = Parser::new();
-    let ts_lang = get_ts_language(&language);
+    let ts_lang = language.tree_sitter_language();
     if parser.set_language(&ts_lang).is_err() {
         eprintln!("Failed to set language for {:?}", language);
         return None;
@@ -53,11 +122,11 @@ pub fn parse_source(source: &str, language: SourceLanguage) -> Option<Tree> {
 }
 
 /// Check if a node is a function definition.
-/// Works for both JS/TS and Rust node types.
+/// Works for JS/TS, Rust, Go, Python, C/C++, Java, Ruby, C#, PHP, Scala, Haskell, OCaml.
 pub fn is_function_node(node: &Node) -> bool {
     matches!(
         node.kind(),
-        // JS/TS
+        // JS/TS (also shared by Go, PHP, Scala, Haskell)
         "function_declaration"
             | "function"
             | "function_expression"
@@ -68,6 +137,24 @@ pub fn is_function_node(node: &Node) -> bool {
             // Rust
             | "function_item"
             | "closure_expression"
+            // Go
+            | "method_declaration"
+            | "func_literal"
+            // Python / C / C++ / PHP / Scala
+            | "function_definition"
+            // Java / C#
+            | "constructor_declaration"
+            | "lambda_expression"
+            // Ruby
+            | "method"
+            | "singleton_method"
+            | "lambda"
+            | "do_block"
+            // PHP
+            | "anonymous_function_creation_expression"
+            // OCaml
+            | "let_binding"
+            | "value_definition"
     )
 }
 
@@ -76,14 +163,19 @@ pub fn get_function_name<'a>(node: &Node<'a>, source: &'a [u8]) -> String {
     let kind = node.kind();
 
     match kind {
-        "function_item" | "function_declaration" | "generator_function_declaration" => {
+        "function_item" | "function_declaration" | "generator_function_declaration"
+        | "function_definition" | "method_declaration" | "constructor_declaration" => {
             name_field_or(node, source, "(anonymous)")
         }
         "closure_expression" => name_from_closure(node, source),
-        "method_definition" => name_from_method(node, source),
-        "arrow_function" | "function_expression" | "function" | "generator_function" => {
+        "method_definition" | "method" | "singleton_method" => name_from_method(node, source),
+        "arrow_function" | "function_expression" | "function" | "generator_function"
+        | "lambda_expression" | "anonymous_function_creation_expression" | "lambda"
+        | "func_literal" => {
             name_from_expr(node, source)
         }
+        "let_binding" | "value_definition" => name_field_or(node, source, "(anonymous)"),
+        "do_block" => "(block)".to_string(),
         _ => "(anonymous)".to_string(),
     }
 }
@@ -125,7 +217,7 @@ fn name_from_expr(node: &Node, source: &[u8]) -> String {
     }
     if let Some(parent) = node.parent() {
         let field = match parent.kind() {
-            "variable_declarator" => "name",
+            "variable_declarator" | "short_var_declaration" | "assignment" => "name",
             "pair" => "key",
             _ => return "(anonymous)".to_string(),
         };

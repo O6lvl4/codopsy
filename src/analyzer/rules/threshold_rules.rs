@@ -1,6 +1,6 @@
 use tree_sitter::{Node, Tree};
 
-use crate::analyzer::ast_utils::{is_function_node, node_column, node_line, SourceLanguage};
+use crate::analyzer::ast_utils::{is_function_node, node_column, node_line};
 use crate::types::{Issue, Severity};
 
 pub fn check_max_lines(
@@ -25,22 +25,35 @@ pub fn check_max_lines(
     }
 }
 
+fn is_depth_increment(kind: &str) -> bool {
+    matches!(
+        kind,
+        // JS/TS / Go / Java / C / C++ / C# / PHP
+        "if_statement" | "for_statement" | "for_in_statement"
+            | "while_statement" | "do_statement" | "switch_statement"
+            // Rust
+            | "if_expression" | "for_expression" | "while_expression"
+            | "loop_expression" | "match_expression"
+            // Python
+            | "elif_clause"
+            // Ruby
+            | "if" | "unless" | "for" | "while" | "until" | "case"
+            // Go
+            | "select_statement"
+    )
+}
+
 struct DepthCtx<'a> {
     file_path: &'a str,
     severity: Severity,
     max: usize,
-    is_rust: bool,
     issues: Vec<Issue>,
 }
 
 impl<'a> DepthCtx<'a> {
     fn walk(&mut self, node: &Node, depth: usize) {
         let kind = node.kind();
-        let increases = if self.is_rust {
-            matches!(kind, "if_expression" | "for_expression" | "while_expression" | "loop_expression" | "match_expression")
-        } else {
-            matches!(kind, "if_statement" | "for_statement" | "for_in_statement" | "while_statement" | "do_statement" | "switch_statement")
-        };
+        let increases = is_depth_increment(kind);
 
         let new_depth = if increases { depth + 1 } else { depth };
 
@@ -62,33 +75,21 @@ impl<'a> DepthCtx<'a> {
     }
 }
 
-pub fn check_max_depth_for_language(
+pub fn check_max_depth(
     tree: &Tree,
     _source: &[u8],
     file_path: &str,
     severity: Severity,
     max: usize,
-    language: SourceLanguage,
 ) -> Vec<Issue> {
     let mut ctx = DepthCtx {
         file_path,
         severity,
         max,
-        is_rust: language.is_rust(),
         issues: Vec::new(),
     };
     ctx.walk(&tree.root_node(), 0);
     ctx.issues
-}
-
-pub fn check_max_depth(
-    tree: &Tree,
-    source: &[u8],
-    file_path: &str,
-    severity: Severity,
-    max: usize,
-) -> Vec<Issue> {
-    check_max_depth_for_language(tree, source, file_path, severity, max, SourceLanguage::JavaScript)
 }
 
 struct ParamsCtx<'a> {

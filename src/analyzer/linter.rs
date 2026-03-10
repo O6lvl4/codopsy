@@ -46,7 +46,7 @@ const RUST_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ),
 ];
 
-/// Rules that apply to all languages.
+/// Rules that apply to all languages (lint rules based on AST patterns common across languages).
 const UNIVERSAL_RULES: &[(&str, Severity, SimpleCheckFn)] = &[];
 
 struct LintCtx<'a> {
@@ -68,12 +68,12 @@ impl<'a> LintCtx<'a> {
         }
     }
 
-    fn run_threshold_rules(&mut self, language: SourceLanguage) {
+    fn run_threshold_rules(&mut self) {
         self.run_threshold("max-lines", DEFAULT_MAX_LINES, |t, s, f, sev, max| {
             check_max_lines(t, s, f, sev, max)
         });
         self.run_threshold("max-depth", DEFAULT_MAX_DEPTH, |t, s, f, sev, max| {
-            check_max_depth_for_language(t, s, f, sev, max, language)
+            check_max_depth(t, s, f, sev, max)
         });
         self.run_threshold("max-params", DEFAULT_MAX_PARAMS, |t, s, f, sev, max| {
             check_max_params(t, s, f, sev, max)
@@ -112,13 +112,15 @@ pub fn lint_file(
 
     ctx.run_rules(UNIVERSAL_RULES);
 
+    // Language-specific lint rules
     if language.is_js_ts() {
         ctx.run_rules(JS_TS_RULES);
     } else if language.is_rust() {
         ctx.run_rules(RUST_RULES);
     }
+    // Other languages: complexity analysis + threshold rules still apply
 
-    ctx.run_threshold_rules(language);
+    ctx.run_threshold_rules();
 
     ctx.issues
 }

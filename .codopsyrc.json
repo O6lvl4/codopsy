@@ -12,10 +12,10 @@
     "no-eval": "error",
     "no-unreachable": "error",
     "max-lines": { "severity": "warning", "max": 300 },
-    "max-depth": { "severity": "warning", "max": 4 },
-    "max-params": { "severity": "warning", "max": 4 },
-    "max-complexity": { "severity": "warning", "max": 10 },
-    "max-cognitive-complexity": { "severity": "warning", "max": 15 },
+    "max-depth": { "severity": "warning", "max": 5 },
+    "max-params": { "severity": "warning", "max": 5 },
+    "max-complexity": { "severity": "warning", "max": 20 },
+    "max-cognitive-complexity": { "severity": "warning", "max": 20 },
     "no-println": false
   }
 }

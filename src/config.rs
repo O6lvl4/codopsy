@@ -68,20 +68,12 @@ pub fn load_config(target_dir: &Path) -> CodopsyConfig {
     let home = dirs_home();
 
     loop {
-        let config_path = dir.join(CONFIG_FILENAME);
-        if config_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&config_path) {
-                if let Ok(config) = serde_json::from_str::<CodopsyConfig>(&content) {
-                    return config;
-                }
-            }
-            return CodopsyConfig::default();
+        if let Some(config) = try_load_from(&dir) {
+            return config;
         }
-
         if Some(&dir) == home.as_ref() {
             break;
         }
-
         match dir.parent() {
             Some(parent) if parent != dir => dir = parent.to_path_buf(),
             _ => break,
@@ -89,18 +81,13 @@ pub fn load_config(target_dir: &Path) -> CodopsyConfig {
     }
 
     // Check home directory as last resort
-    if let Some(home) = home {
-        let home_config = home.join(CONFIG_FILENAME);
-        if home_config.exists() {
-            if let Ok(content) = std::fs::read_to_string(&home_config) {
-                if let Ok(config) = serde_json::from_str::<CodopsyConfig>(&content) {
-                    return config;
-                }
-            }
-        }
-    }
+    home.and_then(|h| try_load_from(&h)).unwrap_or_default()
+}
 
-    CodopsyConfig::default()
+fn try_load_from(dir: &Path) -> Option<CodopsyConfig> {
+    let path = dir.join(CONFIG_FILENAME);
+    let content = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&content).ok()
 }
 
 fn dirs_home() -> Option<PathBuf> {

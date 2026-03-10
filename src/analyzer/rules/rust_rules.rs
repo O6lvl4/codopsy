@@ -15,66 +15,66 @@ pub fn check_no_unsafe(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> V
 
 pub fn check_no_unwrap(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
     run_check(tree, source, fp, sev, |node, ctx| {
-        if node.kind() == "call_expression" {
-            if let Some(func) = node.child_by_field_name("function") {
-                if func.kind() == "field_expression" {
-                    if let Some(field) = func.child_by_field_name("field") {
-                        if node_text(&field, ctx.source) == "unwrap" {
-                            ctx.report(node, "no-unwrap", "Avoid `.unwrap()`, use `?` or handle the error explicitly".into());
-                        }
-                    }
-                }
-            }
+        if node.kind() != "call_expression" {
+            return;
+        }
+        let Some(func) = node.child_by_field_name("function") else { return };
+        if func.kind() != "field_expression" {
+            return;
+        }
+        let Some(field) = func.child_by_field_name("field") else { return };
+        if node_text(&field, ctx.source) == "unwrap" {
+            ctx.report(node, "no-unwrap", "Avoid `.unwrap()`, use `?` or handle the error explicitly".into());
         }
     })
 }
 
 pub fn check_no_dbg(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
     run_check(tree, source, fp, sev, |node, ctx| {
-        if node.kind() == "macro_invocation" {
-            if let Some(m) = node.child_by_field_name("macro") {
-                if node_text(&m, ctx.source) == "dbg" {
-                    ctx.report(node, "no-dbg", "Unexpected `dbg!()` macro".into());
-                }
-            }
+        if node.kind() != "macro_invocation" {
+            return;
+        }
+        let Some(m) = node.child_by_field_name("macro") else { return };
+        if node_text(&m, ctx.source) == "dbg" {
+            ctx.report(node, "no-dbg", "Unexpected `dbg!()` macro".into());
         }
     })
 }
 
 pub fn check_no_todo(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
     run_check(tree, source, fp, sev, |node, ctx| {
-        if node.kind() == "macro_invocation" {
-            if let Some(m) = node.child_by_field_name("macro") {
-                let name = node_text(&m, ctx.source);
-                if name == "todo" || name == "unimplemented" {
-                    ctx.report(node, "no-todo", format!("Unexpected `{name}!()` macro"));
-                }
-            }
+        if node.kind() != "macro_invocation" {
+            return;
+        }
+        let Some(m) = node.child_by_field_name("macro") else { return };
+        let name = node_text(&m, ctx.source);
+        if name == "todo" || name == "unimplemented" {
+            ctx.report(node, "no-todo", format!("Unexpected `{name}!()` macro"));
         }
     })
 }
 
 pub fn check_no_println(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
     run_check(tree, source, fp, sev, |node, ctx| {
-        if node.kind() == "macro_invocation" {
-            if let Some(m) = node.child_by_field_name("macro") {
-                let name = node_text(&m, ctx.source);
-                if matches!(name, "println" | "print" | "eprintln" | "eprint") {
-                    ctx.report(node, "no-println", format!("Unexpected `{name}!()` macro, use a logging framework"));
-                }
-            }
+        if node.kind() != "macro_invocation" {
+            return;
+        }
+        let Some(m) = node.child_by_field_name("macro") else { return };
+        let name = node_text(&m, ctx.source);
+        if matches!(name, "println" | "print" | "eprintln" | "eprint") {
+            ctx.report(node, "no-println", format!("Unexpected `{name}!()` macro, use a logging framework"));
         }
     })
 }
 
 pub fn check_no_empty_function_rust(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
     run_check(tree, source, fp, sev, |node, ctx| {
-        if node.kind() == "function_item" {
-            if let Some(body) = node.child_by_field_name("body") {
-                if body.kind() == "block" && !has_rust_statements(&body) {
-                    ctx.report(node, "no-empty-function", "Unexpected empty function".into());
-                }
-            }
+        if node.kind() != "function_item" {
+            return;
+        }
+        let Some(body) = node.child_by_field_name("body") else { return };
+        if body.kind() == "block" && !has_rust_statements(&body) {
+            ctx.report(node, "no-empty-function", "Unexpected empty function".into());
         }
     })
 }

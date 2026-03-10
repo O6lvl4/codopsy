@@ -1,6 +1,7 @@
 pub mod ast_utils;
 pub mod complexity;
 pub mod linter;
+mod node_classify;
 pub mod rules;
 
 use crate::config::CodopsyConfig;
@@ -30,7 +31,21 @@ pub fn analyze_file(file_path: &str, config: &CodopsyConfig) -> FileAnalysis {
         }
     };
 
-    let language = ast_utils::get_language(file_path);
+    let language = match ast_utils::get_language(file_path) {
+        Some(l) => l,
+        None => {
+            return FileAnalysis {
+                file: file_path.to_string(),
+                complexity: ComplexityResult {
+                    cyclomatic: 0,
+                    cognitive: 0,
+                    functions: vec![],
+                },
+                issues: vec![],
+                score: None,
+            };
+        }
+    };
     let tree = match ast_utils::parse_source(&source, language) {
         Some(t) => t,
         None => {

@@ -129,7 +129,7 @@ pub fn build_analysis_result(
                 Severity::Warning => "warning",
                 Severity::Info => "info",
             };
-            *issues_by_severity.get_mut(key).unwrap() += 1;
+            *issues_by_severity.entry(key.to_string()).or_insert(0) += 1;
         }
     }
 
