@@ -26,6 +26,7 @@ pub enum SourceLanguage {
     Zig,
     Elixir,
     Yaml,
+    Almide,
 }
 
 impl SourceLanguage {
@@ -76,6 +77,7 @@ impl SourceLanguage {
             Zig => tree_sitter_zig::LANGUAGE.into(),
             Elixir => tree_sitter_elixir::LANGUAGE.into(),
             Yaml => tree_sitter_yaml::LANGUAGE.into(),
+            Almide => tree_sitter_almide::LANGUAGE.into(),
         }
     }
 }
@@ -84,7 +86,7 @@ const LANGUAGE_NAMES: &[&str] = &[
     "TypeScript", "TSX", "JavaScript", "Rust", "Go", "Python",
     "C", "C++", "Java", "Ruby", "C#", "PHP", "Scala", "Haskell",
     "Bash", "HTML", "CSS", "JSON", "OCaml",
-    "Swift", "Lua", "Zig", "Elixir", "YAML",
+    "Swift", "Lua", "Zig", "Elixir", "YAML", "Almide",
 ];
 
 pub fn get_language(file_path: &str) -> Option<SourceLanguage> {
@@ -125,6 +127,7 @@ const EXT_LANGUAGE_MAP: &[(&[&str], SourceLanguage)] = &[
     (&["zig"], SourceLanguage::Zig),
     (&["ex", "exs"], SourceLanguage::Elixir),
     (&["yml", "yaml"], SourceLanguage::Yaml),
+    (&["almd"], SourceLanguage::Almide),
 ];
 
 pub fn parse_source(source: &str, language: SourceLanguage) -> Option<Tree> {
@@ -171,6 +174,8 @@ pub fn is_function_node(node: &Node) -> bool {
             // OCaml
             | "let_binding"
             | "value_definition"
+            // Almide
+            | "test_declaration"
     )
 }
 
@@ -183,6 +188,7 @@ pub fn get_function_name<'a>(node: &Node<'a>, source: &'a [u8]) -> String {
         | "function_definition" | "method_declaration" | "constructor_declaration" => {
             name_field_or(node, source, "(anonymous)")
         }
+        "test_declaration" => name_from_child_kind(node, source, "string_literal", "(test)"),
         "closure_expression" => name_from_closure(node, source),
         "method_definition" | "method" | "singleton_method" => name_from_method(node, source),
         "arrow_function" | "function_expression" | "function" | "generator_function"
@@ -198,6 +204,19 @@ pub fn get_function_name<'a>(node: &Node<'a>, source: &'a [u8]) -> String {
 
 fn name_field_or(node: &Node, source: &[u8], fallback: &str) -> String {
     node.child_by_field_name("name")
+        .or_else(|| find_child_by_kind(node, "function_name"))
+        .map(|n| node_text(&n, source).to_string())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+fn find_child_by_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
+    (0..node.child_count()).find_map(|i| {
+        node.child(i).filter(|c| c.kind() == kind)
+    })
+}
+
+fn name_from_child_kind(node: &Node, source: &[u8], kind: &str, fallback: &str) -> String {
+    find_child_by_kind(node, kind)
         .map(|n| node_text(&n, source).to_string())
         .unwrap_or_else(|| fallback.to_string())
 }

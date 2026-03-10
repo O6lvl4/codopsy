@@ -37,6 +37,7 @@ tree-sitter-lua = "0.5"
 tree-sitter-zig = "1.1"
 tree-sitter-elixir = "0.3"
 tree-sitter-yaml = "0.7"
+tree-sitter-almide = { git = "https://github.com/almide/tree-sitter-almide", tag = "v0.1.0" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

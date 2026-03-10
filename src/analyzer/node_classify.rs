@@ -40,6 +40,8 @@ pub fn is_cc_increment(kind: &str) -> bool {
             | "match"
             | "alternative"
             | "guard"
+            // Almide
+            | "for_in_expression"
     )
 }
 
@@ -76,6 +78,9 @@ pub fn is_nesting_construct(kind: &str) -> bool {
             | "unless"
             | "case"
             | "rescue"
+            // Almide
+            | "for_in_expression"
+            | "do_expression"
     )
 }
 
@@ -93,5 +98,5 @@ pub fn is_break_continue(kind: &str) -> bool {
 
 /// Is this a logical operator?
 pub fn is_logical_op(op: &str) -> bool {
-    matches!(op, "&&" | "||" | "??")
+    matches!(op, "&&" | "||" | "??" | "and" | "or")
 }

@@ -170,7 +170,7 @@ checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
 name = "codopsy"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -180,6 +180,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tree-sitter",
+ "tree-sitter-almide",
  "tree-sitter-bash",
  "tree-sitter-c",
  "tree-sitter-c-sharp",
@@ -562,6 +563,15 @@ dependencies = [
  "regex-syntax",
  "serde_json",
  "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-almide"
+version = "0.1.0"
+source = "git+https://github.com/almide/tree-sitter-almide?tag=v0.1.0#b5892bf3e8d6e6fbce46f24ba503f9075011751f"
+dependencies = [
+ "cc",
  "tree-sitter-language",
 ]
 
