@@ -1,6 +1,6 @@
 [package]
 name = "codopsy"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 description = "AST-level code quality analyzer for multiple languages"
 
@@ -32,6 +32,11 @@ tree-sitter-html = "0.23"
 tree-sitter-css = "0.25"
 tree-sitter-json = "0.24"
 tree-sitter-ocaml = "0.24"
+tree-sitter-swift = "0.7"
+tree-sitter-lua = "0.5"
+tree-sitter-zig = "1.1"
+tree-sitter-elixir = "0.3"
+tree-sitter-yaml = "0.7"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

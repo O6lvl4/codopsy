@@ -21,6 +21,11 @@ pub enum SourceLanguage {
     Css,
     Json,
     OCaml,
+    Swift,
+    Lua,
+    Zig,
+    Elixir,
+    Yaml,
 }
 
 impl SourceLanguage {
@@ -37,7 +42,7 @@ impl SourceLanguage {
     }
 
     pub fn is_markup_or_data(&self) -> bool {
-        matches!(self, Self::Html | Self::Css | Self::Json)
+        matches!(self, Self::Html | Self::Css | Self::Json | Self::Yaml)
     }
 
     pub fn name(&self) -> &'static str {
@@ -66,6 +71,11 @@ impl SourceLanguage {
             Css => tree_sitter_css::LANGUAGE.into(),
             Json => tree_sitter_json::LANGUAGE.into(),
             OCaml => tree_sitter_ocaml::LANGUAGE_OCAML.into(),
+            Swift => tree_sitter_swift::LANGUAGE.into(),
+            Lua => tree_sitter_lua::LANGUAGE.into(),
+            Zig => tree_sitter_zig::LANGUAGE.into(),
+            Elixir => tree_sitter_elixir::LANGUAGE.into(),
+            Yaml => tree_sitter_yaml::LANGUAGE.into(),
         }
     }
 }
@@ -74,6 +84,7 @@ const LANGUAGE_NAMES: &[&str] = &[
     "TypeScript", "TSX", "JavaScript", "Rust", "Go", "Python",
     "C", "C++", "Java", "Ruby", "C#", "PHP", "Scala", "Haskell",
     "Bash", "HTML", "CSS", "JSON", "OCaml",
+    "Swift", "Lua", "Zig", "Elixir", "YAML",
 ];
 
 pub fn get_language(file_path: &str) -> Option<SourceLanguage> {
@@ -109,6 +120,11 @@ const EXT_LANGUAGE_MAP: &[(&[&str], SourceLanguage)] = &[
     (&["css"], SourceLanguage::Css),
     (&["json"], SourceLanguage::Json),
     (&["ml", "mli"], SourceLanguage::OCaml),
+    (&["swift"], SourceLanguage::Swift),
+    (&["lua"], SourceLanguage::Lua),
+    (&["zig"], SourceLanguage::Zig),
+    (&["ex", "exs"], SourceLanguage::Elixir),
+    (&["yml", "yaml"], SourceLanguage::Yaml),
 ];
 
 pub fn parse_source(source: &str, language: SourceLanguage) -> Option<Tree> {
