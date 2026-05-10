@@ -14,10 +14,8 @@ pub fn check_no_puts(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec
         }
         let Some(method) = node.child_by_field_name("method") else { return };
         let name = node_text(&method, ctx.source);
-        if matches!(name, "puts" | "p" | "pp" | "print") {
-            if node.child_by_field_name("receiver").is_none() {
-                ctx.report(node, "no-puts", format!("Avoid `{name}`; use a logger"));
-            }
+        if matches!(name, "puts" | "p" | "pp" | "print") && node.child_by_field_name("receiver").is_none() {
+            ctx.report(node, "no-puts", format!("Avoid `{name}`; use a logger"));
         }
     })
 }

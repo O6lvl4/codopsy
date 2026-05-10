@@ -58,10 +58,8 @@ pub fn check_no_unsafe_perform_io(tree: &Tree, source: &[u8], fp: &str, sev: Sev
 pub fn check_no_trace(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
     run_check(tree, source, fp, sev, |node, ctx| {
         let text = node_text(node, ctx.source);
-        if text == "trace" || text == "traceShow" || text == "traceShowId" {
-            if node.kind() == "variable" {
-                ctx.report(node, "no-trace", format!("Remove debug `{text}` call"));
-            }
+        if matches!(text, "trace" | "traceShow" | "traceShowId") && node.kind() == "variable" {
+            ctx.report(node, "no-trace", format!("Remove debug `{text}` call"));
         }
     })
 }

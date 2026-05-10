@@ -22,15 +22,14 @@ pub fn check_no_puts(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec
             // Bare identifier call like `puts "hello"`
             node_text(node, ctx.source)
         };
-        if matches!(text, "puts" | "p" | "pp" | "print") {
-            // Only flag top-level calls, not method calls on objects
-            if node.kind() == "call" {
-                if node.child_by_field_name("receiver").is_some() {
-                    return;
-                }
-            }
-            ctx.report(node, "no-puts", format!("Avoid `{text}`, use a logger"));
+        if !matches!(text, "puts" | "p" | "pp" | "print") {
+            return;
         }
+        // Skip method calls on objects (e.g. logger.puts)
+        if node.kind() == "call" && node.child_by_field_name("receiver").is_some() {
+            return;
+        }
+        ctx.report(node, "no-puts", format!("Avoid `{text}`, use a logger"));
     })
 }
 

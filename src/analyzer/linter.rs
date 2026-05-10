@@ -293,6 +293,17 @@ const JULIA_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("no-bare-ccall", Severity::Warning, julia_rules::check_no_bare_ccall),
 ];
 
+/// Rules that only apply to Bash files.
+const BASH_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("unquoted-expansion", Severity::Warning, bash_rules::check_unquoted_expansion),
+    ("no-eval", Severity::Error, bash_rules::check_no_eval),
+    ("cd-without-or", Severity::Warning, bash_rules::check_cd_without_or),
+    ("useless-cat", Severity::Warning, bash_rules::check_useless_cat),
+    ("dangerous-rm", Severity::Error, bash_rules::check_dangerous_rm),
+    ("no-set-e", Severity::Info, bash_rules::check_no_set_e),
+    ("test-equals", Severity::Warning, bash_rules::check_test_equals),
+];
+
 /// Rules that apply to all languages with function bodies.
 const UNIVERSAL_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("todo-comment", Severity::Info, check_todo_comments),
@@ -396,36 +407,7 @@ pub fn lint_file(
         SourceLanguage::Elm => ctx.run_rules(ELM_RULES),
         SourceLanguage::Groovy => ctx.run_rules(GROOVY_RULES),
         SourceLanguage::Julia => ctx.run_rules(JULIA_RULES),
-        SourceLanguage::Bash => {
-            if !config.is_rule_disabled("unquoted-expansion") {
-                let sev = config.get_rule_severity("unquoted-expansion").unwrap_or(Severity::Warning);
-                ctx.issues.extend(bash_rules::check_unquoted_expansion(tree, source.as_bytes(), file_path, sev));
-            }
-            if !config.is_rule_disabled("no-eval") {
-                let sev = config.get_rule_severity("no-eval").unwrap_or(Severity::Error);
-                ctx.issues.extend(bash_rules::check_no_eval(tree, source.as_bytes(), file_path, sev));
-            }
-            if !config.is_rule_disabled("cd-without-or") {
-                let sev = config.get_rule_severity("cd-without-or").unwrap_or(Severity::Warning);
-                ctx.issues.extend(bash_rules::check_cd_without_or(tree, source.as_bytes(), file_path, sev));
-            }
-            if !config.is_rule_disabled("useless-cat") {
-                let sev = config.get_rule_severity("useless-cat").unwrap_or(Severity::Warning);
-                ctx.issues.extend(bash_rules::check_useless_cat(tree, source.as_bytes(), file_path, sev));
-            }
-            if !config.is_rule_disabled("dangerous-rm") {
-                let sev = config.get_rule_severity("dangerous-rm").unwrap_or(Severity::Error);
-                ctx.issues.extend(bash_rules::check_dangerous_rm(tree, source.as_bytes(), file_path, sev));
-            }
-            if !config.is_rule_disabled("no-set-e") {
-                let sev = config.get_rule_severity("no-set-e").unwrap_or(Severity::Info);
-                ctx.issues.extend(bash_rules::check_no_set_e(tree, source.as_bytes(), file_path, sev));
-            }
-            if !config.is_rule_disabled("test-equals") {
-                let sev = config.get_rule_severity("test-equals").unwrap_or(Severity::Warning);
-                ctx.issues.extend(bash_rules::check_test_equals(tree, source.as_bytes(), file_path, sev));
-            }
-        }
+        SourceLanguage::Bash => ctx.run_rules(BASH_RULES),
         _ => {}
     }
 

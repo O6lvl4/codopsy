@@ -211,6 +211,14 @@ pub fn check_collapsible_if(tree: &Tree, source: &[u8], fp: &str, sev: Severity)
             *inner
         };
         if target.kind() == "if_expression" && target.child_by_field_name("alternative").is_none() {
+            // Skip if either if uses `if let` (can't collapse into &&)
+            let outer_is_if_let = node.child_by_field_name("condition")
+                .map_or(false, |c| c.kind() == "let_condition" || c.kind() == "let_chain");
+            let inner_is_if_let = target.child_by_field_name("condition")
+                .map_or(false, |c| c.kind() == "let_condition" || c.kind() == "let_chain");
+            if outer_is_if_let || inner_is_if_let {
+                return;
+            }
             ctx.report(node, "collapsible-if", "These `if` statements can be collapsed into `if a && b { ... }`".into());
         }
     })

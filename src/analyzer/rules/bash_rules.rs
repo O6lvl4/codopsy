@@ -117,14 +117,14 @@ pub fn check_dangerous_rm(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -
             return;
         }
         let full = node_text(node, ctx.source);
-        if full.contains("-rf") || full.contains("-r -f") || full.contains("-fr") {
-            if full.contains('$') || full.contains('*') {
-                ctx.report(
-                    node,
-                    "dangerous-rm",
-                    "Dangerous `rm -rf` with variable/glob expansion; validate paths first".into(),
-                );
-            }
+        let is_recursive_force = full.contains("-rf") || full.contains("-r -f") || full.contains("-fr");
+        let has_expansion = full.contains('$') || full.contains('*');
+        if is_recursive_force && has_expansion {
+            ctx.report(
+                node,
+                "dangerous-rm",
+                "Dangerous `rm -rf` with variable/glob expansion; validate paths first".into(),
+            );
         }
     })
 }

@@ -1,33 +1,38 @@
 # codopsy
 
-AST-level code quality analyzer for 28 languages. Uses [tree-sitter](https://tree-sitter.github.io/) to parse source code into ASTs and analyzes complexity, lint issues, and structural quality — without executing code.
+AST-level code quality analyzer for 34 languages with 174 lint rules. Uses [tree-sitter](https://tree-sitter.github.io/) to parse source code into ASTs and analyzes complexity, lint issues, and structural quality — without executing code.
 
 ## Supported Languages
 
 | Language | Extensions | Lint Rules | Complexity |
 |----------|-----------|------------|------------|
-| TypeScript | `.ts` | 23 rules | CC + Cognitive |
-| TSX | `.tsx` | 23 rules | CC + Cognitive |
+| TypeScript/TSX | `.ts` `.tsx` | 23 rules | CC + Cognitive |
 | JavaScript | `.js` `.jsx` `.mjs` `.cjs` | 23 rules | CC + Cognitive |
+| Python | `.py` `.pyi` | 17 rules | CC + Cognitive |
 | Rust | `.rs` | 14 rules | CC + Cognitive |
-| Python | `.py` `.pyi` | 13 rules | CC + Cognitive |
+| Go | `.go` | 14 rules | CC + Cognitive |
 | Java | `.java` | 12 rules | CC + Cognitive |
-| Go | `.go` | 10 rules | CC + Cognitive |
 | C/C++ | `.c` `.h` `.cpp` `.cc` `.cxx` `.hpp` `.hxx` | 9 rules | CC + Cognitive |
-| Elixir | `.ex` `.exs` | 4 rules | CC + Cognitive |
+| Bash | `.sh` `.bash` `.zsh` | 7 rules | CC + Cognitive |
+| Kotlin | `.kt` `.kts` | 6 rules | CC + Cognitive |
+| Swift | `.swift` | 6 rules | CC + Cognitive |
+| Ruby | `.rb` | 5 rules | CC + Cognitive |
+| PHP | `.php` | 5 rules | CC + Cognitive |
+| Haskell | `.hs` | 5 rules | CC + Cognitive |
+| Scala | `.scala` `.sc` | 5 rules | CC + Cognitive |
+| Dart | `.dart` | 5 rules | CC + Cognitive |
+| Crystal | `.cr` | 5 rules | CC + Cognitive |
 | Clojure | `.clj` `.cljs` `.cljc` `.edn` | 4 rules | CC + Cognitive |
-| Erlang | `.erl` `.hrl` | 3 rules | CC + Cognitive |
+| Elixir | `.ex` `.exs` | 4 rules | CC + Cognitive |
+| Lua | `.lua` | 4 rules | CC + Cognitive |
+| Zig | `.zig` | 4 rules | CC + Cognitive |
+| Groovy | `.groovy` `.gvy` | 4 rules | CC + Cognitive |
+| Julia | `.jl` | 4 rules | CC + Cognitive |
 | Gleam | `.gleam` | 3 rules | CC + Cognitive |
-| Ruby | `.rb` | universal | CC + Cognitive |
+| Erlang | `.erl` `.hrl` | 3 rules | CC + Cognitive |
+| Elm | `.elm` | 3 rules | CC + Cognitive |
 | C# | `.cs` | universal | CC + Cognitive |
-| PHP | `.php` | universal | CC + Cognitive |
-| Scala | `.scala` `.sc` | universal | CC + Cognitive |
-| Haskell | `.hs` | universal | CC + Cognitive |
 | OCaml | `.ml` `.mli` | universal | CC + Cognitive |
-| Swift | `.swift` | universal | CC + Cognitive |
-| Lua | `.lua` | universal | CC + Cognitive |
-| Zig | `.zig` | universal | CC + Cognitive |
-| Bash | `.sh` `.bash` `.zsh` | universal | CC + Cognitive |
 | Almide | `.almd` | universal | CC + Cognitive |
 | HTML | `.html` `.htm` | threshold | structure |
 | CSS | `.css` | threshold | structure |
@@ -260,6 +265,64 @@ Config is searched upward from the target directory to the home directory.
 | `no-todo` | warning | Disallow `todo` expressions |
 | `no-panic` | warning | Disallow `panic` expressions |
 | `no-let-assert` | warning | Avoid `let assert` (crashes at runtime) |
+
+### Kotlin Rules (6)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-println` | info | Avoid `println()` |
+| `no-unsafe-cast` | warning | Avoid `as` cast; use `as?` |
+| `no-not-null-assertion` | warning | Avoid `!!`; use safe calls |
+| `no-empty-catch` | warning | Disallow empty catch blocks |
+| `no-system-exit` | warning | Avoid `System.exit()` |
+| `prefer-val` | info | Prefer `val` over `var` |
+
+### Ruby Rules (5)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-puts` | info | Avoid `puts`/`p`/`pp` |
+| `no-eval` | error | Disallow `eval` |
+| `require-relative` | warning | Use `require_relative` for relative paths |
+| `no-rescue-exception` | warning | Avoid `rescue Exception` |
+| `no-sleep` | warning | Avoid `sleep` in production |
+
+### PHP Rules (5)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-debug-output` | warning | Remove `var_dump`/`dd` |
+| `no-eval` | error | Disallow `eval()` |
+| `no-exit` | warning | Avoid `die()`/`exit()` |
+| `strict-comparison` | warning | Use `===` instead of `==` |
+| `no-error-suppression` | warning | Avoid `@` operator |
+
+### Bash Rules (7)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `unquoted-expansion` | warning | Quote `$var` to prevent word splitting |
+| `no-eval` | error | Disallow `eval` |
+| `cd-without-or` | warning | Use `cd dir \|\| exit 1` |
+| `useless-cat` | warning | Use `cmd < file` instead of `cat file \| cmd` |
+| `dangerous-rm` | error | Flag `rm -rf` with variable expansion |
+| `no-set-e` | info | Add `set -euo pipefail` |
+| `test-equals` | warning | Use `=` not `==` in `[ ]` |
+
+### Swift Rules (6)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-print` | info | Avoid `print()`; use `os_log` |
+| `no-force-unwrap` | warning | Avoid `!` force unwrapping |
+| `no-force-try` | warning | Avoid `try!` |
+| `no-force-cast` | warning | Avoid `as!` force cast |
+| `no-nslog` | warning | Avoid `NSLog` |
+| `no-fatal-error` | warning | Avoid `fatalError()` |
+
+### Crystal, Dart, Haskell, Scala, Lua, Zig, Elm, Groovy, Julia
+
+Each has 3–5 dedicated rules targeting debug output, unsafe patterns, and language-specific anti-patterns. See the source in `src/analyzer/rules/` for full details.
 
 ### Universal Rules (all languages)
 
