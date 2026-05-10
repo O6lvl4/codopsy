@@ -1,0 +1,14 @@
+# Language toolchains for E2E syntax validation tests.
+# `qusp install` to set up, `cargo test --test e2e_syntax` to run.
+
+[tools]
+node    = "22"
+python  = "3.12"
+go      = "1.22"
+java    = "21"
+rust    = "1.80"
+gleam   = "1.4"
+clojure = "1.12"
+lua     = "5.4"
+ruby    = "3.3"
+zig     = "0.13"
