@@ -10,12 +10,16 @@ use super::rules::bug_detection::*;
 use super::rules::c_rules::*;
 use super::rules::clojure_rules;
 use super::rules::control_flow::*;
+use super::rules::dart_rules;
 use super::rules::elixir_rules::*;
+use super::rules::elm_rules;
 use super::rules::erlang_rules::*;
 use super::rules::gleam_rules;
 use super::rules::go_rules;
+use super::rules::groovy_rules;
 use super::rules::haskell_rules;
 use super::rules::java_rules::*;
+use super::rules::julia_rules;
 use super::rules::lua_rules;
 use super::rules::php_rules;
 use super::rules::python_rules::*;
@@ -236,6 +240,38 @@ const SCALA_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("no-as-instance-of", Severity::Warning, scala_rules::check_no_as_instance_of),
 ];
 
+/// Rules that only apply to Dart files.
+const DART_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-print", Severity::Info, dart_rules::check_no_print),
+    ("no-dynamic", Severity::Warning, dart_rules::check_no_dynamic),
+    ("no-empty-catch", Severity::Warning, dart_rules::check_no_empty_catch),
+    ("no-cast", Severity::Warning, dart_rules::check_no_cast),
+    ("no-rethrow-only", Severity::Warning, dart_rules::check_no_rethrow_only),
+];
+
+/// Rules that only apply to Elm files.
+const ELM_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-debug", Severity::Warning, elm_rules::check_no_debug),
+    ("no-todo", Severity::Warning, elm_rules::check_no_todo),
+    ("unused-import", Severity::Warning, elm_rules::check_unused_import),
+];
+
+/// Rules that only apply to Groovy files.
+const GROOVY_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-println", Severity::Info, groovy_rules::check_no_println),
+    ("no-def-type", Severity::Warning, groovy_rules::check_no_def_type),
+    ("no-system-exit", Severity::Warning, groovy_rules::check_no_system_exit),
+    ("no-empty-catch", Severity::Warning, groovy_rules::check_no_empty_catch),
+];
+
+/// Rules that only apply to Julia files.
+const JULIA_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-println", Severity::Info, julia_rules::check_no_println),
+    ("no-eval", Severity::Error, julia_rules::check_no_eval),
+    ("no-global-mutable", Severity::Warning, julia_rules::check_no_global_mutable),
+    ("no-bare-ccall", Severity::Warning, julia_rules::check_no_bare_ccall),
+];
+
 /// Rules that apply to all languages with function bodies.
 const UNIVERSAL_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("todo-comment", Severity::Info, check_todo_comments),
@@ -333,6 +369,10 @@ pub fn lint_file(
         SourceLanguage::Zig => ctx.run_rules(ZIG_RULES),
         SourceLanguage::Haskell => ctx.run_rules(HASKELL_RULES),
         SourceLanguage::Scala => ctx.run_rules(SCALA_RULES),
+        SourceLanguage::Dart => ctx.run_rules(DART_RULES),
+        SourceLanguage::Elm => ctx.run_rules(ELM_RULES),
+        SourceLanguage::Groovy => ctx.run_rules(GROOVY_RULES),
+        SourceLanguage::Julia => ctx.run_rules(JULIA_RULES),
         SourceLanguage::Bash => {
             if !config.is_rule_disabled("unquoted-expansion") {
                 let sev = config.get_rule_severity("unquoted-expansion").unwrap_or(Severity::Warning);

@@ -30,6 +30,10 @@ pub enum SourceLanguage {
     Clojure,
     Erlang,
     Gleam,
+    Dart,
+    Elm,
+    Groovy,
+    Julia,
 }
 
 impl SourceLanguage {
@@ -92,6 +96,10 @@ impl SourceLanguage {
             Clojure => tree_sitter_clojure::LANGUAGE.into(),
             Erlang => tree_sitter_erlang::LANGUAGE.into(),
             Gleam => tree_sitter_gleam::LANGUAGE.into(),
+            Dart => tree_sitter_dart::LANGUAGE.into(),
+            Elm => tree_sitter_elm::LANGUAGE.into(),
+            Groovy => tree_sitter_groovy::LANGUAGE.into(),
+            Julia => tree_sitter_julia::LANGUAGE.into(),
         }
     }
 }
@@ -102,6 +110,7 @@ const LANGUAGE_NAMES: &[&str] = &[
     "Bash", "HTML", "CSS", "JSON", "OCaml",
     "Swift", "Lua", "Zig", "Elixir", "YAML", "Almide",
     "Clojure", "Erlang", "Gleam",
+    "Dart", "Elm", "Groovy", "Julia",
 ];
 
 pub fn get_language(file_path: &str) -> Option<SourceLanguage> {
@@ -146,6 +155,10 @@ const EXT_LANGUAGE_MAP: &[(&[&str], SourceLanguage)] = &[
     (&["clj", "cljs", "cljc", "edn"], SourceLanguage::Clojure),
     (&["erl", "hrl"], SourceLanguage::Erlang),
     (&["gleam"], SourceLanguage::Gleam),
+    (&["dart"], SourceLanguage::Dart),
+    (&["elm"], SourceLanguage::Elm),
+    (&["groovy", "gvy", "gy", "gsh"], SourceLanguage::Groovy),
+    (&["jl"], SourceLanguage::Julia),
 ];
 
 pub fn parse_source(source: &str, language: SourceLanguage) -> Option<Tree> {
