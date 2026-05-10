@@ -322,3 +322,84 @@ fn collect_imports(node: &tree_sitter::Node, source: &[u8], imports: &mut Vec<St
         }
     }
 }
+
+/// Detect `if a { if b { ... } }` that can be merged with `&&`.
+/// Inspired by revive's `indent-error-flow`.
+pub fn check_collapsible_if_go(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
+    run_check(tree, source, fp, sev, |node, ctx| {
+        if node.kind() != "if_statement" {
+            return;
+        }
+        // Must not have else
+        let mut cursor = node.walk();
+        let has_else = node.children(&mut cursor).any(|c| c.kind() == "else_clause");
+        if has_else {
+            return;
+        }
+        // Consequence block must have exactly one if_statement
+        let Some(consequence) = node.child_by_field_name("consequence") else { return };
+        if consequence.kind() != "block" {
+            return;
+        }
+        let mut block_cursor = consequence.walk();
+        let stmts: Vec<_> = consequence.children(&mut block_cursor)
+            .filter(|c| !matches!(c.kind(), "{" | "}" | "comment"))
+            .collect();
+        // stmts might be wrapped in statement_list
+        let inner = if stmts.len() == 1 && stmts[0].kind() == "statement_list" {
+            let sl = &stmts[0];
+            let mut sl_cursor = sl.walk();
+            sl.children(&mut sl_cursor).collect::<Vec<_>>()
+        } else {
+            stmts
+        };
+        if inner.len() == 1 && inner[0].kind() == "if_statement" {
+            let inner_if = &inner[0];
+            let mut inner_cursor = inner_if.walk();
+            let inner_has_else = inner_if.children(&mut inner_cursor).any(|c| c.kind() == "else_clause");
+            if !inner_has_else {
+                ctx.report(node, "collapsible-if", "Nested `if` can be merged with `&&`".into());
+            }
+        }
+    })
+}
+
+/// Detect superfluous else after return.
+/// Inspired by revive's `superfluous-else`.
+pub fn check_superfluous_else_go(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
+    run_check(tree, source, fp, sev, |node, ctx| {
+        if node.kind() != "if_statement" {
+            return;
+        }
+        // Must have else
+        let mut cursor = node.walk();
+        let has_else = node.children(&mut cursor).any(|c| c.kind() == "else_clause");
+        if !has_else {
+            return;
+        }
+        // Check if consequence ends with return
+        let Some(consequence) = node.child_by_field_name("consequence") else { return };
+        if ends_with_return_go(&consequence) {
+            ctx.report(node, "superfluous-else", "Remove `else` after `return`; dedent the else body".into());
+        }
+    })
+}
+
+fn ends_with_return_go(block: &tree_sitter::Node) -> bool {
+    let mut cursor = block.walk();
+    let children: Vec<_> = block.children(&mut cursor).collect();
+    // Find statement_list if present
+    for child in children.iter().rev() {
+        if child.kind() == "statement_list" {
+            let mut sl_cursor = child.walk();
+            let stmts: Vec<_> = child.children(&mut sl_cursor).collect();
+            if let Some(last) = stmts.last() {
+                return matches!(last.kind(), "return_statement" | "break_statement" | "continue_statement");
+            }
+        }
+        if matches!(child.kind(), "return_statement" | "break_statement" | "continue_statement") {
+            return true;
+        }
+    }
+    false
+}

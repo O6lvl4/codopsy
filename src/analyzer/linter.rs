@@ -5,6 +5,7 @@ use crate::config::CodopsyConfig;
 use crate::defaults;
 use crate::types::{Issue, Severity};
 
+use super::rules::bash_rules;
 use super::rules::bug_detection::*;
 use super::rules::c_rules::*;
 use super::rules::clojure_rules;
@@ -19,6 +20,7 @@ use super::rules::rust_rules;
 use super::rules::style_rules::*;
 use super::rules::threshold_rules::*;
 use super::rules::universal_rules::*;
+use super::rules::unused;
 
 type SimpleCheckFn = fn(&Tree, &[u8], &str, Severity) -> Vec<Issue>;
 
@@ -83,6 +85,8 @@ const GO_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("no-naked-return", Severity::Warning, go_rules::check_no_naked_return),
     ("no-range-over-string", Severity::Info, go_rules::check_no_range_over_string),
     ("no-shadow-import", Severity::Warning, go_rules::check_no_shadow_import),
+    ("collapsible-if", Severity::Warning, go_rules::check_collapsible_if_go),
+    ("superfluous-else", Severity::Warning, go_rules::check_superfluous_else_go),
 ];
 
 /// Rules that only apply to Python files.
@@ -100,6 +104,8 @@ const PYTHON_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("no-nested-with", Severity::Warning, check_no_nested_with),
     ("no-return-in-init", Severity::Error, check_no_return_in_init),
     ("simplify-boolean-return", Severity::Warning, check_simplify_boolean_return),
+    ("collapsible-if", Severity::Warning, check_collapsible_if_python),
+    ("superfluous-else", Severity::Warning, check_superfluous_else),
 ];
 
 /// Rules that only apply to Java files.
@@ -111,6 +117,11 @@ const JAVA_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("no-raw-type", Severity::Warning, check_no_raw_type),
     ("no-string-equality", Severity::Warning, check_no_string_equality),
     ("missing-switch-default", Severity::Warning, check_no_missing_switch_default),
+    ("no-empty-if", Severity::Warning, check_no_empty_if_java),
+    ("no-double-brace-init", Severity::Warning, check_no_double_brace_init),
+    ("no-string-concat-in-loop", Severity::Warning, check_no_string_concat_in_loop),
+    ("no-nested-try", Severity::Warning, check_no_nested_try),
+    ("equals-null", Severity::Error, check_equals_null),
 ];
 
 /// Rules that apply to C and C++ files.
@@ -119,6 +130,11 @@ const C_CPP_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("no-unsafe-fn", Severity::Error, check_no_unsafe_fn),
     ("no-malloc", Severity::Info, check_no_malloc),
     ("no-goto", Severity::Warning, check_no_goto),
+    ("no-sizeof-ptr", Severity::Warning, check_no_sizeof_ptr),
+    ("no-magic-number", Severity::Info, check_no_magic_number),
+    ("no-implicit-fallthrough", Severity::Warning, check_no_implicit_fallthrough_c),
+    ("no-empty-if", Severity::Warning, check_no_empty_if_c),
+    ("no-void-main", Severity::Warning, check_no_void_main),
 ];
 
 /// Rules that only apply to Elixir files.
@@ -241,7 +257,51 @@ pub fn lint_file(
         SourceLanguage::Erlang => ctx.run_rules(ERLANG_RULES),
         SourceLanguage::Gleam => ctx.run_rules(GLEAM_RULES),
         SourceLanguage::Clojure => ctx.run_rules(CLOJURE_RULES),
+        SourceLanguage::Bash => {
+            if !config.is_rule_disabled("unquoted-expansion") {
+                let sev = config.get_rule_severity("unquoted-expansion").unwrap_or(Severity::Warning);
+                ctx.issues.extend(bash_rules::check_unquoted_expansion(tree, source.as_bytes(), file_path, sev));
+            }
+            if !config.is_rule_disabled("no-eval") {
+                let sev = config.get_rule_severity("no-eval").unwrap_or(Severity::Error);
+                ctx.issues.extend(bash_rules::check_no_eval(tree, source.as_bytes(), file_path, sev));
+            }
+            if !config.is_rule_disabled("cd-without-or") {
+                let sev = config.get_rule_severity("cd-without-or").unwrap_or(Severity::Warning);
+                ctx.issues.extend(bash_rules::check_cd_without_or(tree, source.as_bytes(), file_path, sev));
+            }
+            if !config.is_rule_disabled("useless-cat") {
+                let sev = config.get_rule_severity("useless-cat").unwrap_or(Severity::Warning);
+                ctx.issues.extend(bash_rules::check_useless_cat(tree, source.as_bytes(), file_path, sev));
+            }
+            if !config.is_rule_disabled("dangerous-rm") {
+                let sev = config.get_rule_severity("dangerous-rm").unwrap_or(Severity::Error);
+                ctx.issues.extend(bash_rules::check_dangerous_rm(tree, source.as_bytes(), file_path, sev));
+            }
+            if !config.is_rule_disabled("no-set-e") {
+                let sev = config.get_rule_severity("no-set-e").unwrap_or(Severity::Info);
+                ctx.issues.extend(bash_rules::check_no_set_e(tree, source.as_bytes(), file_path, sev));
+            }
+            if !config.is_rule_disabled("test-equals") {
+                let sev = config.get_rule_severity("test-equals").unwrap_or(Severity::Warning);
+                ctx.issues.extend(bash_rules::check_test_equals(tree, source.as_bytes(), file_path, sev));
+            }
+        }
         _ => {}
+    }
+
+    // Unused import detection (two-pass, can't use rule array pattern)
+    if !config.is_rule_disabled("unused-import") {
+        let sev = config.get_rule_severity("unused-import").unwrap_or(Severity::Warning);
+        match language {
+            _ if language.is_js_ts() => {
+                ctx.issues.extend(unused::check_unused_import_js(tree, source.as_bytes(), file_path, sev));
+            }
+            SourceLanguage::Python => {
+                ctx.issues.extend(unused::check_unused_import_python(tree, source.as_bytes(), file_path, sev));
+            }
+            _ => {}
+        }
     }
 
     // Universal empty-function for languages without a dedicated check

@@ -348,3 +348,72 @@ fn sole_return_bool_from_else(else_clause: &tree_sitter::Node, source: &[u8]) ->
     }
     None
 }
+
+/// Detect `if a: if b:` that can be merged into `if a and b:`.
+/// Inspired by Ruff SIM102, Pylint collapsible-if.
+pub fn check_collapsible_if_python(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
+    run_check(tree, source, fp, sev, |node, ctx| {
+        if node.kind() != "if_statement" {
+            return;
+        }
+        // Must not have elif or else
+        let mut cursor = node.walk();
+        let has_else = node.children(&mut cursor).any(|c| {
+            matches!(c.kind(), "else_clause" | "elif_clause")
+        });
+        if has_else {
+            return;
+        }
+        // Body must be a block with exactly one if_statement
+        let Some(body) = node.child_by_field_name("consequence") else { return };
+        if body.kind() != "block" {
+            return;
+        }
+        let mut body_cursor = body.walk();
+        let stmts: Vec<_> = body.children(&mut body_cursor)
+            .filter(|c| !matches!(c.kind(), "NEWLINE" | "INDENT" | "DEDENT" | "newline" | "comment"))
+            .collect();
+        if stmts.len() != 1 || stmts[0].kind() != "if_statement" {
+            return;
+        }
+        // Inner if must also have no else
+        let inner = &stmts[0];
+        let mut inner_cursor = inner.walk();
+        let inner_has_else = inner.children(&mut inner_cursor).any(|c| {
+            matches!(c.kind(), "else_clause" | "elif_clause")
+        });
+        if !inner_has_else {
+            ctx.report(node, "collapsible-if", "Nested `if` can be merged: `if a and b:`".into());
+        }
+    })
+}
+
+/// Detect superfluous else after return/raise.
+/// Inspired by Ruff RET505.
+pub fn check_superfluous_else(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
+    run_check(tree, source, fp, sev, |node, ctx| {
+        if node.kind() != "if_statement" {
+            return;
+        }
+        // Must have else clause
+        let mut cursor = node.walk();
+        let has_else = node.children(&mut cursor).any(|c| c.kind() == "else_clause");
+        if !has_else {
+            return;
+        }
+        // Check if the if-body ends with return or raise
+        let Some(body) = node.child_by_field_name("consequence") else { return };
+        if body.kind() != "block" {
+            return;
+        }
+        let mut body_cursor = body.walk();
+        let stmts: Vec<_> = body.children(&mut body_cursor)
+            .filter(|c| !matches!(c.kind(), "NEWLINE" | "INDENT" | "DEDENT" | "newline" | "comment"))
+            .collect();
+        if let Some(last) = stmts.last() {
+            if matches!(last.kind(), "return_statement" | "raise_statement") {
+                ctx.report(node, "superfluous-else", "Remove `else` after `return`/`raise`; dedent the else body".into());
+            }
+        }
+    })
+}

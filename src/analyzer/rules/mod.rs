@@ -1,3 +1,4 @@
+pub mod bash_rules;
 pub mod bug_detection;
 pub mod c_rules;
 pub mod clojure_rules;
@@ -12,6 +13,7 @@ pub mod rust_rules;
 pub mod style_rules;
 pub mod threshold_rules;
 pub mod universal_rules;
+pub mod unused;
 
 use tree_sitter::{Node, Tree};
 
