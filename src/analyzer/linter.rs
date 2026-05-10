@@ -20,6 +20,7 @@ use super::rules::groovy_rules;
 use super::rules::haskell_rules;
 use super::rules::java_rules::*;
 use super::rules::julia_rules;
+use super::rules::kotlin_rules;
 use super::rules::lua_rules;
 use super::rules::php_rules;
 use super::rules::python_rules::*;
@@ -240,6 +241,16 @@ const SCALA_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("no-as-instance-of", Severity::Warning, scala_rules::check_no_as_instance_of),
 ];
 
+/// Rules that only apply to Kotlin files.
+const KOTLIN_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-println", Severity::Info, kotlin_rules::check_no_println),
+    ("no-unsafe-cast", Severity::Warning, kotlin_rules::check_no_unsafe_cast),
+    ("no-not-null-assertion", Severity::Warning, kotlin_rules::check_no_not_null_assertion),
+    ("no-empty-catch", Severity::Warning, kotlin_rules::check_no_empty_catch),
+    ("no-system-exit", Severity::Warning, kotlin_rules::check_no_system_exit),
+    ("prefer-val", Severity::Info, kotlin_rules::check_prefer_val),
+];
+
 /// Rules that only apply to Dart files.
 const DART_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("no-print", Severity::Info, dart_rules::check_no_print),
@@ -369,6 +380,7 @@ pub fn lint_file(
         SourceLanguage::Zig => ctx.run_rules(ZIG_RULES),
         SourceLanguage::Haskell => ctx.run_rules(HASKELL_RULES),
         SourceLanguage::Scala => ctx.run_rules(SCALA_RULES),
+        SourceLanguage::Kotlin => ctx.run_rules(KOTLIN_RULES),
         SourceLanguage::Dart => ctx.run_rules(DART_RULES),
         SourceLanguage::Elm => ctx.run_rules(ELM_RULES),
         SourceLanguage::Groovy => ctx.run_rules(GROOVY_RULES),
