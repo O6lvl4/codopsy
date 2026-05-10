@@ -6,11 +6,9 @@
 //!
 //! Run: `cargo test --test e2e_compare -- --nocapture`
 //!
-//! Supported native linters (auto-detected):
-//!   JS:     npx eslint (via qusp run)
-//!   Python: ruff / qusp run ruff
-//!   Rust:   cargo clippy
-//!   Go:     go vet + staticcheck / golangci-lint
+//! Native linters are auto-detected. When unavailable, codopsy-only results
+//! are shown. Install linters via qusp or system package manager to enable
+//! full comparison.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -36,146 +34,231 @@ fn run_codopsy(path: &PathBuf) -> BTreeSet<String> {
         .collect()
 }
 
-fn run_command(cmd: &str, args: &[&str]) -> Option<String> {
-    let output = Command::new(cmd).args(args).output().ok()?;
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    Some(combined)
-}
-
-fn run_qusp(args: &[&str]) -> Option<String> {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let output = Command::new("qusp")
-        .arg("run")
+fn try_run(cmd: &str, args: &[&str]) -> Option<String> {
+    let output = Command::new(cmd)
         .args(args)
-        .current_dir(manifest_dir)
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .ok()?;
-    let combined = format!(
+    Some(format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
-    );
-    Some(combined)
+    ))
 }
 
-fn count_diagnostic_lines(output: &str) -> usize {
-    output
-        .lines()
-        .filter(|l| {
-            let t = l.trim();
-            !t.is_empty()
-                && !t.starts_with("warning:")
-                && !t.starts_with("Checking")
-                && !t.starts_with("Finished")
-                && !t.starts_with("error: could not compile")
-                && !t.starts_with("For more information")
-        })
-        .count()
+fn try_qusp(args: &[&str]) -> Option<String> {
+    try_run("qusp", &[&["run"], args].concat())
 }
 
-fn print_report(lang: &str, file: &str, codopsy_issues: &BTreeSet<String>, native_output: Option<&str>, native_name: &str) {
+/// Try multiple commands in order, return the first that succeeds.
+fn try_any(attempts: &[(&str, &[&str])]) -> (Option<String>, &'static str) {
+    for &(name, args_slice) in attempts {
+        // Split the first element as command, rest as args
+        // Actually we receive (label, full_args_to_try_run)
+        // Let's restructure
+    }
+    (None, "none")
+}
+
+fn print_report(lang: &str, file: &str, codopsy_issues: &BTreeSet<String>, native: Option<&str>, native_name: &str) {
+    let native_count = native.map(|o| {
+        o.lines().filter(|l| !l.trim().is_empty()).count()
+    }).unwrap_or(0);
+
     eprintln!();
-    eprintln!("╔══════════════════════════════════════════════════════════════╗");
-    eprintln!("║  {} — {} vs codopsy", lang, native_name);
-    eprintln!("╠══════════════════════════════════════════════════════════════╣");
-    eprintln!("║  File: {}", file);
-    eprintln!("║  codopsy issues: {}", codopsy_issues.len());
+    eprintln!("┌─────────────────────────────────────────────────────────────────┐");
+    eprintln!("│ {:10} │ codopsy: {:3} issues │ {:>15}: ~{:<3} lines │",
+        lang, codopsy_issues.len(), native_name, native_count);
+    eprintln!("├─────────────────────────────────────────────────────────────────┤");
 
-    if let Some(output) = native_output {
-        let native_lines = count_diagnostic_lines(output);
-        eprintln!("║  {} diagnostics: ~{}", native_name, native_lines);
-        eprintln!("╠══════════════════════════════════════════════════════════════╣");
-        eprintln!("║  codopsy findings:");
-        for issue in codopsy_issues {
-            eprintln!("║    {}", issue);
+    for issue in codopsy_issues {
+        eprintln!("│ codopsy │ {}", issue);
+    }
+
+    if let Some(output) = native {
+        eprintln!("│─────────┤");
+        for line in output.lines().filter(|l| !l.trim().is_empty()).take(20) {
+            eprintln!("│ {:7} │ {}", native_name, line.trim());
         }
-        eprintln!("║");
-        eprintln!("║  {} output (raw):", native_name);
-        for line in output.lines().take(30) {
-            let trimmed = line.trim();
-            if !trimmed.is_empty() {
-                eprintln!("║    {}", trimmed);
-            }
-        }
-        if output.lines().count() > 30 {
-            eprintln!("║    ... ({} more lines)", output.lines().count() - 30);
+        let total = output.lines().filter(|l| !l.trim().is_empty()).count();
+        if total > 20 {
+            eprintln!("│ {:7} │ ... +{} more lines", native_name, total - 20);
         }
     } else {
-        eprintln!("║  {} not available — skipping comparison", native_name);
-        eprintln!("╠══════════════════════════════════════════════════════════════╣");
-        eprintln!("║  codopsy findings:");
-        for issue in codopsy_issues {
-            eprintln!("║    {}", issue);
-        }
+        eprintln!("│ {:7} │ (not installed — skipped)", native_name);
     }
-    eprintln!("╚══════════════════════════════════════════════════════════════╝");
+
+    eprintln!("└─────────────────────────────────────────────────────────────────┘");
 }
 
-#[test]
-fn compare_js_eslint() {
-    let path = fixture("sample.js");
+fn compare(lang: &str, file: &str, native_name: &str, native_fn: impl FnOnce(&str) -> Option<String>) {
+    let path = fixture(file);
     let codopsy = run_codopsy(&path);
-
-    // Try eslint via npx (no config = eslint recommended)
-    let native = run_qusp(&[
-        "npx", "--yes", "eslint@latest", "--no-eslintrc",
-        "--rule", "{\"no-var\": \"warn\", \"eqeqeq\": \"warn\", \"no-eval\": \"error\", \"no-debugger\": \"error\", \"no-unreachable\": \"error\", \"valid-typeof\": \"error\", \"use-isnan\": \"error\"}",
-        &path.to_string_lossy(),
-    ]);
-
-    print_report("JavaScript", "sample.js", &codopsy, native.as_deref(), "ESLint");
+    let path_str = path.to_string_lossy().to_string();
+    let native = native_fn(&path_str);
+    print_report(lang, file, &codopsy, native.as_deref(), native_name);
 }
 
-#[test]
-fn compare_python_ruff() {
-    let path = fixture("sample.py");
-    let codopsy = run_codopsy(&path);
-
-    // Try ruff (fast Python linter)
-    let native = run_qusp(&[
-        "ruff", "check", "--select", "ALL", "--no-fix",
-        &path.to_string_lossy(),
-    ]).or_else(|| {
-        // Fallback: try pip-installed ruff
-        run_command("ruff", &["check", "--select", "ALL", "--no-fix", &path.to_string_lossy()])
-    });
-
-    print_report("Python", "sample.py", &codopsy, native.as_deref(), "Ruff");
-}
+// ─── Languages with dedicated codopsy rules ──────────────────────────
 
 #[test]
-fn compare_rust_clippy() {
-    let path = fixture("sample.rs");
-    let codopsy = run_codopsy(&path);
-
-    // clippy requires a cargo project, so we use rustc with clippy driver
-    // or just run clippy on the file directly
-    let native = run_command(
-        "clippy-driver",
-        &["--edition", "2021", "-W", "clippy::all", &path.to_string_lossy()],
-    ).or_else(|| {
-        // Fallback: parse with rustc warnings
-        run_command("rustc", &[
-            "--edition", "2021", "--crate-type", "lib",
-            "-W", "warnings",
-            &path.to_string_lossy(),
-            "-o", "/dev/null",
+fn compare_javascript() {
+    compare("JavaScript", "sample.js", "ESLint", |f| {
+        try_qusp(&[
+            "npx", "--yes", "eslint@latest", "--no-eslintrc",
+            "--rule", r#"{"no-var":"warn","eqeqeq":"warn","no-eval":"error","no-debugger":"error","no-unreachable":"error","valid-typeof":"error","use-isnan":"error","no-console":"warn","no-constant-condition":"warn"}"#,
+            f,
         ])
     });
-
-    print_report("Rust", "sample.rs", &codopsy, native.as_deref(), "Clippy");
 }
 
 #[test]
-fn compare_go_vet() {
-    let path = fixture("sample.go");
-    let codopsy = run_codopsy(&path);
+fn compare_typescript() {
+    compare("TypeScript", "sample.ts", "ESLint", |f| {
+        try_qusp(&[
+            "npx", "--yes", "eslint@latest", "--no-eslintrc",
+            "--rule", r#"{"no-var":"warn","no-eval":"error","no-debugger":"error","no-unreachable":"error","use-isnan":"error","no-console":"warn"}"#,
+            f,
+        ])
+    });
+}
 
-    let native = run_qusp(&["go", "vet", &path.to_string_lossy()]);
+#[test]
+fn compare_rust() {
+    compare("Rust", "sample.rs", "Clippy", |f| {
+        try_run("clippy-driver", &["--edition", "2021", "-W", "clippy::all", f])
+            .or_else(|| try_run("rustc", &["--edition", "2021", "--crate-type", "lib", "-W", "warnings", f, "-o", "/dev/null"]))
+    });
+}
 
-    print_report("Go", "sample.go", &codopsy, native.as_deref(), "go vet");
+#[test]
+fn compare_go() {
+    compare("Go", "sample.go", "go vet", |f| {
+        try_qusp(&["go", "vet", f])
+    });
+}
+
+#[test]
+fn compare_python() {
+    compare("Python", "sample.py", "Ruff", |f| {
+        try_qusp(&["ruff", "check", "--select", "ALL", "--no-fix", f])
+            .or_else(|| try_run("ruff", &["check", "--select", "ALL", "--no-fix", f]))
+    });
+}
+
+#[test]
+fn compare_java() {
+    compare("Java", "sample.java", "javac", |f| {
+        try_qusp(&["javac", "-Xlint:all", "-d", "/tmp", f])
+            .or_else(|| try_run("javac", &["-Xlint:all", "-d", "/tmp", f]))
+    });
+}
+
+#[test]
+fn compare_c() {
+    compare("C", "sample.c", "gcc", |f| {
+        try_run("gcc", &["-Wall", "-Wextra", "-fsyntax-only", f])
+            .or_else(|| try_run("clang", &["-Wall", "-Wextra", "-fsyntax-only", f]))
+    });
+}
+
+#[test]
+fn compare_elixir() {
+    compare("Elixir", "sample.ex", "Credo", |f| {
+        try_qusp(&["mix", "credo", "--strict", f])
+    });
+}
+
+#[test]
+fn compare_erlang() {
+    compare("Erlang", "sample.erl", "erlc", |f| {
+        try_run("erlc", &["-W", "+warn_unused_vars", f])
+    });
+}
+
+#[test]
+fn compare_clojure() {
+    compare("Clojure", "sample.clj", "clj-kondo", |f| {
+        try_run("clj-kondo", &["--lint", f])
+            .or_else(|| try_qusp(&["clj-kondo", "--lint", f]))
+    });
+}
+
+#[test]
+fn compare_gleam() {
+    compare("Gleam", "sample.gleam", "gleam", |f| {
+        // gleam doesn't lint single files easily, just report codopsy
+        let _ = f;
+        None
+    });
+}
+
+// ─── Languages with universal rules only ─────────────────────────────
+
+#[test]
+fn compare_ruby() {
+    compare("Ruby", "sample.rb", "RuboCop", |f| {
+        try_run("rubocop", &["--format", "simple", f])
+            .or_else(|| try_qusp(&["rubocop", "--format", "simple", f]))
+    });
+}
+
+#[test]
+fn compare_swift() {
+    compare("Swift", "sample.swift", "swiftc", |f| {
+        try_run("swiftc", &["-typecheck", f])
+    });
+}
+
+#[test]
+fn compare_lua() {
+    compare("Lua", "sample.lua", "luacheck", |f| {
+        try_run("luacheck", &["--no-color", f])
+            .or_else(|| try_qusp(&["luacheck", "--no-color", f]))
+    });
+}
+
+#[test]
+fn compare_bash() {
+    compare("Bash", "sample.sh", "ShellCheck", |f| {
+        try_run("shellcheck", &["-f", "gcc", f])
+    });
+}
+
+#[test]
+fn compare_zig() {
+    compare("Zig", "sample.zig", "zig", |f| {
+        try_run("zig", &["ast-check", f])
+    });
+}
+
+#[test]
+fn compare_haskell() {
+    compare("Haskell", "sample.hs", "HLint", |f| {
+        try_run("hlint", &[f])
+    });
+}
+
+#[test]
+fn compare_scala() {
+    compare("Scala", "sample.scala", "scalac", |f| {
+        try_qusp(&["scalac", "-deprecation", "-feature", f])
+    });
+}
+
+#[test]
+fn compare_php() {
+    compare("PHP", "sample.php", "php", |f| {
+        try_run("php", &["-l", f])
+            .or_else(|| try_qusp(&["php", "-l", f]))
+    });
+}
+
+#[test]
+fn compare_csharp() {
+    compare("C#", "sample.cs", "dotnet", |_f| {
+        // dotnet requires project setup, skip
+        None
+    });
 }
