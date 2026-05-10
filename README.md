@@ -1,36 +1,40 @@
 # codopsy
 
-AST-level code quality analyzer for 25 languages. Uses [tree-sitter](https://tree-sitter.github.io/) to parse source code into ASTs and analyzes complexity, lint issues, and structural quality — without executing code.
+AST-level code quality analyzer for 28 languages. Uses [tree-sitter](https://tree-sitter.github.io/) to parse source code into ASTs and analyzes complexity, lint issues, and structural quality — without executing code.
 
 ## Supported Languages
 
 | Language | Extensions | Lint Rules | Complexity |
 |----------|-----------|------------|------------|
-| TypeScript | `.ts` | 11 rules | CC + Cognitive |
-| TSX | `.tsx` | 11 rules | CC + Cognitive |
-| JavaScript | `.js` `.jsx` `.mjs` `.cjs` | 11 rules | CC + Cognitive |
-| Rust | `.rs` | 6 rules | CC + Cognitive |
-| Go | `.go` | threshold | CC + Cognitive |
-| Python | `.py` `.pyi` | threshold | CC + Cognitive |
-| C | `.c` `.h` | threshold | CC + Cognitive |
-| C++ | `.cpp` `.cc` `.cxx` `.hpp` `.hxx` | threshold | CC + Cognitive |
-| Java | `.java` | threshold | CC + Cognitive |
-| Ruby | `.rb` | threshold | CC + Cognitive |
-| C# | `.cs` | threshold | CC + Cognitive |
-| PHP | `.php` | threshold | CC + Cognitive |
-| Scala | `.scala` `.sc` | threshold | CC + Cognitive |
-| Haskell | `.hs` | threshold | CC + Cognitive |
-| Bash | `.sh` `.bash` `.zsh` | threshold | CC + Cognitive |
+| TypeScript | `.ts` | 23 rules | CC + Cognitive |
+| TSX | `.tsx` | 23 rules | CC + Cognitive |
+| JavaScript | `.js` `.jsx` `.mjs` `.cjs` | 23 rules | CC + Cognitive |
+| Rust | `.rs` | 14 rules | CC + Cognitive |
+| Python | `.py` `.pyi` | 13 rules | CC + Cognitive |
+| Java | `.java` | 12 rules | CC + Cognitive |
+| Go | `.go` | 10 rules | CC + Cognitive |
+| C/C++ | `.c` `.h` `.cpp` `.cc` `.cxx` `.hpp` `.hxx` | 9 rules | CC + Cognitive |
+| Elixir | `.ex` `.exs` | 4 rules | CC + Cognitive |
+| Clojure | `.clj` `.cljs` `.cljc` `.edn` | 4 rules | CC + Cognitive |
+| Erlang | `.erl` `.hrl` | 3 rules | CC + Cognitive |
+| Gleam | `.gleam` | 3 rules | CC + Cognitive |
+| Ruby | `.rb` | universal | CC + Cognitive |
+| C# | `.cs` | universal | CC + Cognitive |
+| PHP | `.php` | universal | CC + Cognitive |
+| Scala | `.scala` `.sc` | universal | CC + Cognitive |
+| Haskell | `.hs` | universal | CC + Cognitive |
+| OCaml | `.ml` `.mli` | universal | CC + Cognitive |
+| Swift | `.swift` | universal | CC + Cognitive |
+| Lua | `.lua` | universal | CC + Cognitive |
+| Zig | `.zig` | universal | CC + Cognitive |
+| Bash | `.sh` `.bash` `.zsh` | universal | CC + Cognitive |
+| Almide | `.almd` | universal | CC + Cognitive |
 | HTML | `.html` `.htm` | threshold | structure |
 | CSS | `.css` | threshold | structure |
 | JSON | `.json` | threshold | structure |
-| OCaml | `.ml` `.mli` | threshold | CC + Cognitive |
-| Swift | `.swift` | threshold | CC + Cognitive |
-| Lua | `.lua` | threshold | CC + Cognitive |
-| Zig | `.zig` | threshold | CC + Cognitive |
-| Elixir | `.ex` `.exs` | threshold | CC + Cognitive |
 | YAML | `.yml` `.yaml` | threshold | structure |
-| Almide | `.almd` | threshold | CC + Cognitive |
+
+**universal** = todo-comment + no-empty-function + threshold rules.
 
 ## Install
 
@@ -79,10 +83,10 @@ Projects are graded A–F based on three components:
 | Grade | Score |
 |-------|-------|
 | A | 90–100 |
-| B | 80–89 |
-| C | 70–79 |
-| D | 60–69 |
-| F | 0–59 |
+| B | 75–89 |
+| C | 60–74 |
+| D | 40–59 |
+| F | 0–39 |
 
 ## Configuration
 
@@ -100,7 +104,9 @@ Create `.codopsyrc.json` in your project root (or run `codopsy init`):
     "max-complexity": { "severity": "warning", "max": 10 },
     "max-cognitive-complexity": { "severity": "warning", "max": 15 },
     "no-println": false
-  }
+  },
+  "skipDirs": ["/custom-build/"],
+  "skipFiles": ["generated.ts"]
 }
 ```
 
@@ -110,7 +116,7 @@ Config is searched upward from the target directory to the home directory.
 
 ## Rules
 
-### JS/TS Rules
+### JS/TS Rules (23)
 
 | Rule | Default | Description |
 |------|---------|-------------|
@@ -125,8 +131,20 @@ Config is searched upward from the target directory to the home directory.
 | `no-self-assign` | warning | Disallow self-assignment |
 | `no-eval` | error | Disallow `eval()` |
 | `no-unreachable` | error | Detect unreachable code after return/throw |
+| `no-constant-condition` | warning | Disallow constant conditions (`if (true)`) |
+| `default-case` | warning | Require default case in switch |
+| `no-fallthrough` | warning | Disallow case fallthrough without break |
+| `no-self-compare` | warning | Disallow `x === x` self-comparison |
+| `no-useless-catch` | error | Disallow catch that only re-throws |
+| `use-isnan` | error | Require `Number.isNaN()` instead of `=== NaN` |
+| `no-compare-neg-zero` | error | Disallow comparison with `-0` |
+| `no-unsafe-negation` | error | Disallow `!key in obj` (wrong precedence) |
+| `no-constructor-return` | error | Disallow return with value in constructor |
+| `valid-typeof` | error | Require valid typeof comparison strings |
+| `no-useless-rename` | warning | Disallow `import { x as x }` |
+| `no-empty-pattern` | warning | Disallow empty destructuring `const {} = x` |
 
-### Rust Rules
+### Rust Rules (14)
 
 | Rule | Default | Description |
 |------|---------|-------------|
@@ -136,6 +154,119 @@ Config is searched upward from the target directory to the home directory.
 | `no-todo` | warning | Disallow `todo!()`/`unimplemented!()` |
 | `no-println` | info | Disallow `println!()`/`print!()` etc. |
 | `no-empty-function` | warning | Disallow empty function bodies |
+| `needless-bool` | warning | Simplify `if c { true } else { false }` |
+| `needless-return` | warning | Remove explicit `return` in tail position |
+| `bool-comparison` | warning | Simplify `x == true` to `x` |
+| `collapsible-if` | warning | Merge `if a { if b { } }` to `if a && b { }` |
+| `single-match` | warning | Prefer `if let` over single-arm match |
+| `manual-map` | warning | Prefer `.map()` over match Some/None |
+| `redundant-clone` | warning | Detect `.clone().clone()` |
+| `eq-op` | warning | Detect self-comparison `x == x` |
+
+### Go Rules (10)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-panic` | warning | Avoid bare `panic()` |
+| `no-fmt-print` | info | Avoid `fmt.Println()`, use structured logger |
+| `no-ignored-error` | warning | Detect `_ = err` ignored errors |
+| `no-os-exit` | warning | Avoid `os.Exit()` |
+| `no-defer-in-loop` | warning | Avoid `defer` inside loops |
+| `no-empty-block` | warning | Detect empty if/for blocks |
+| `no-unreachable` | warning | Detect code after return/break |
+| `no-naked-return` | warning | Avoid bare return with named returns |
+| `no-range-over-string` | info | Flag range over string variable |
+| `no-shadow-import` | warning | Detect variable shadowing import |
+
+### Python Rules (13)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-bare-except` | warning | Avoid bare `except:` |
+| `no-print` | info | Avoid `print()`, use logging |
+| `no-eval` | error | Disallow `eval()`/`exec()` |
+| `no-mutable-default` | warning | Disallow mutable default arguments |
+| `no-global` | warning | Avoid `global` keyword |
+| `no-assert` | info | Avoid `assert` in non-test code |
+| `unreachable` | warning | Detect code after return/raise |
+| `pointless-except` | warning | Detect except that only re-raises |
+| `no-pass-body` | info | Detect function/class with only `pass` |
+| `no-star-import` | warning | Avoid `from x import *` |
+| `no-nested-with` | warning | Combine nested `with` statements |
+| `no-return-in-init` | error | Disallow return value in `__init__` |
+| `simplify-boolean-return` | warning | Simplify `if c: return True else: return False` |
+
+### Java Rules (12)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-sysout` | warning | Avoid `System.out.println()` |
+| `no-print-stack-trace` | warning | Avoid `e.printStackTrace()` |
+| `no-empty-catch` | warning | Disallow empty catch blocks |
+| `no-throws-exception` | warning | Avoid `throws Exception` (too broad) |
+| `no-raw-type` | warning | Require generics on collection types |
+| `no-string-equality` | warning | Use `.equals()` instead of `==` for strings |
+| `missing-switch-default` | warning | Require default in switch |
+| `no-empty-if` | warning | Detect empty if blocks |
+| `no-double-brace-init` | warning | Avoid `new X() {{ }}` initialization |
+| `no-string-concat-in-loop` | warning | Use StringBuilder in loops |
+| `no-nested-try` | warning | Avoid nested try blocks |
+| `equals-null` | error | Detect `x.equals(null)` |
+
+### C/C++ Rules (9)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-printf` | info | Avoid `printf()`/`sprintf()` in production |
+| `no-unsafe-fn` | error | Disallow `gets()`/`strcpy()`/`strcat()` |
+| `no-malloc` | info | Flag `malloc()`/`calloc()` usage |
+| `no-goto` | warning | Avoid `goto` statements |
+| `no-sizeof-ptr` | warning | Detect `sizeof(ptr)` on pointers |
+| `no-magic-number` | info | Flag numeric literals (not 0/1) |
+| `no-implicit-fallthrough` | warning | Require break in switch cases |
+| `no-empty-if` | warning | Detect empty if blocks |
+| `no-void-main` | warning | Use `int main()` not `void main()` |
+
+### Elixir Rules (4)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-io-inspect` | warning | Disallow `IO.inspect()` |
+| `no-io-puts` | info | Disallow `IO.puts()` |
+| `no-raise-in-with` | warning | Avoid `raise` inside `with` blocks |
+| `pipe-into-anonymous` | warning | Avoid piping into anonymous functions |
+
+### Clojure Rules (4)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-println` | info | Disallow `println`/`prn`/`print` |
+| `no-def-in-def` | warning | Disallow nested `def`/`defn` |
+| `no-thread-sleep` | warning | Avoid `Thread/sleep` |
+| `no-reflection` | warning | Flag Java reflection calls |
+
+### Erlang Rules (3)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-process-flag` | warning | Flag `process_flag` usage |
+| `no-catch-all` | warning | Detect catch-all as first clause |
+| `no-exit-call` | warning | Avoid `exit()` calls |
+
+### Gleam Rules (3)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-todo` | warning | Disallow `todo` expressions |
+| `no-panic` | warning | Disallow `panic` expressions |
+| `no-let-assert` | warning | Avoid `let assert` (crashes at runtime) |
+
+### Universal Rules (all languages)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `todo-comment` | info | Detect TODO/FIXME/HACK/XXX comments |
+| `no-empty-function` | warning | Detect empty function bodies |
 
 ### Threshold Rules (all languages)
 
