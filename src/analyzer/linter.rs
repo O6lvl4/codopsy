@@ -14,13 +14,20 @@ use super::rules::elixir_rules::*;
 use super::rules::erlang_rules::*;
 use super::rules::gleam_rules;
 use super::rules::go_rules;
+use super::rules::haskell_rules;
 use super::rules::java_rules::*;
+use super::rules::lua_rules;
+use super::rules::php_rules;
 use super::rules::python_rules::*;
+use super::rules::ruby_rules;
 use super::rules::rust_rules;
+use super::rules::scala_rules;
 use super::rules::style_rules::*;
+use super::rules::swift_rules;
 use super::rules::threshold_rules::*;
 use super::rules::universal_rules::*;
 use super::rules::unused;
+use super::rules::zig_rules;
 
 type SimpleCheckFn = fn(&Tree, &[u8], &str, Severity) -> Vec<Issue>;
 
@@ -167,6 +174,68 @@ const CLOJURE_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("no-reflection", Severity::Warning, clojure_rules::check_no_reflection),
 ];
 
+/// Rules that only apply to Ruby files.
+const RUBY_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-puts", Severity::Info, ruby_rules::check_no_puts),
+    ("no-eval", Severity::Error, ruby_rules::check_no_eval),
+    ("require-relative", Severity::Warning, ruby_rules::check_require_relative),
+    ("no-rescue-exception", Severity::Warning, ruby_rules::check_no_rescue_exception),
+    ("no-sleep", Severity::Warning, ruby_rules::check_no_sleep),
+];
+
+/// Rules that only apply to PHP files.
+const PHP_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-debug-output", Severity::Warning, php_rules::check_no_debug_output),
+    ("no-eval", Severity::Error, php_rules::check_no_eval),
+    ("no-exit", Severity::Warning, php_rules::check_no_exit),
+    ("strict-comparison", Severity::Warning, php_rules::check_strict_comparison),
+    ("no-error-suppression", Severity::Warning, php_rules::check_no_error_suppression),
+];
+
+/// Rules that only apply to Lua files.
+const LUA_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-global", Severity::Warning, lua_rules::check_no_global),
+    ("no-os-execute", Severity::Error, lua_rules::check_no_os_execute),
+    ("no-loadstring", Severity::Error, lua_rules::check_no_loadstring),
+    ("no-print", Severity::Info, lua_rules::check_no_print),
+];
+
+/// Rules that only apply to Swift files.
+const SWIFT_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-print", Severity::Info, swift_rules::check_no_print),
+    ("no-force-unwrap", Severity::Warning, swift_rules::check_no_force_unwrap),
+    ("no-force-try", Severity::Warning, swift_rules::check_no_force_try),
+    ("no-force-cast", Severity::Warning, swift_rules::check_no_force_cast),
+    ("no-nslog", Severity::Warning, swift_rules::check_no_nslog),
+    ("no-fatal-error", Severity::Warning, swift_rules::check_no_fatal_error),
+];
+
+/// Rules that only apply to Zig files.
+const ZIG_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-debug-print", Severity::Info, zig_rules::check_no_debug_print),
+    ("no-unreachable", Severity::Warning, zig_rules::check_no_unreachable),
+    ("no-panic", Severity::Warning, zig_rules::check_no_panic),
+    ("no-catch-all-switch", Severity::Warning, zig_rules::check_no_catch_all_switch),
+];
+
+/// Rules that only apply to Haskell files.
+const HASKELL_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-partial-function", Severity::Warning, haskell_rules::check_no_partial_functions),
+    ("no-undefined", Severity::Warning, haskell_rules::check_no_undefined),
+    ("no-error", Severity::Warning, haskell_rules::check_no_error),
+    ("no-unsafe-perform-io", Severity::Error, haskell_rules::check_no_unsafe_perform_io),
+    ("no-trace", Severity::Warning, haskell_rules::check_no_trace),
+];
+
+/// Rules that only apply to Scala files.
+const SCALA_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-println", Severity::Info, scala_rules::check_no_println),
+    ("no-null", Severity::Warning, scala_rules::check_no_null),
+    ("no-var", Severity::Warning, scala_rules::check_no_var),
+    ("no-return", Severity::Warning, scala_rules::check_no_return),
+    ("no-as-instance-of", Severity::Warning, scala_rules::check_no_as_instance_of),
+];
+
 /// Rules that apply to all languages with function bodies.
 const UNIVERSAL_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("todo-comment", Severity::Info, check_todo_comments),
@@ -257,6 +326,13 @@ pub fn lint_file(
         SourceLanguage::Erlang => ctx.run_rules(ERLANG_RULES),
         SourceLanguage::Gleam => ctx.run_rules(GLEAM_RULES),
         SourceLanguage::Clojure => ctx.run_rules(CLOJURE_RULES),
+        SourceLanguage::Ruby => ctx.run_rules(RUBY_RULES),
+        SourceLanguage::Php => ctx.run_rules(PHP_RULES),
+        SourceLanguage::Lua => ctx.run_rules(LUA_RULES),
+        SourceLanguage::Swift => ctx.run_rules(SWIFT_RULES),
+        SourceLanguage::Zig => ctx.run_rules(ZIG_RULES),
+        SourceLanguage::Haskell => ctx.run_rules(HASKELL_RULES),
+        SourceLanguage::Scala => ctx.run_rules(SCALA_RULES),
         SourceLanguage::Bash => {
             if !config.is_rule_disabled("unquoted-expansion") {
                 let sev = config.get_rule_severity("unquoted-expansion").unwrap_or(Severity::Warning);

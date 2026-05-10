@@ -1,13 +1,17 @@
--- Realistic Haskell code with various issues
 -- TODO: add type signatures
-
 module Sample where
 
+import Debug.Trace (trace)
+
 process :: [Int] -> [Int]
-process items = filter (> 10) items
+process items = trace "debug" $ filter (> 10) items
+
+unsafeStuff :: IO Int
+unsafeStuff = do
+  let x = head []
+  let y = fromJust Nothing
+  error "not implemented"
+  return 0
 
 empty :: () -> ()
 empty _ = ()
-
-complex :: Int -> Int -> Int -> Int -> Int -> Int
-complex a b c d e = a + b + c + d + e

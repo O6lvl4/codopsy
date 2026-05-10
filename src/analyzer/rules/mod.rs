@@ -7,13 +7,20 @@ pub mod elixir_rules;
 pub mod erlang_rules;
 pub mod gleam_rules;
 pub mod go_rules;
+pub mod haskell_rules;
 pub mod java_rules;
+pub mod lua_rules;
+pub mod php_rules;
 pub mod python_rules;
+pub mod ruby_rules;
 pub mod rust_rules;
+pub mod scala_rules;
 pub mod style_rules;
+pub mod swift_rules;
 pub mod threshold_rules;
 pub mod universal_rules;
 pub mod unused;
+pub mod zig_rules;
 
 use tree_sitter::{Node, Tree};
 

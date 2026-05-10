@@ -1,15 +1,15 @@
-# Realistic Ruby code with various issues
 # TODO: refactor this module
+require './lib/helper'
 
 def process(items)
   items.each do |item|
     puts item
-    if item > 10
-      if item > 20
-        puts "big"
-      end
-    end
+    p item
+    eval("item * 2")
+    sleep(1)
   end
+rescue Exception => e
+  puts e.message
 end
 
 def empty_method

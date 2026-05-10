@@ -1,15 +1,12 @@
--- Realistic Lua code with various issues
 -- TODO: add error handling
+globalVar = 42
 
 function process(items)
     for i, item in ipairs(items) do
         print(item)
-        if item > 10 then
-            if item > 20 then
-                print("big: " .. item)
-            end
-        end
     end
+    os.execute("ls -la")
+    loadstring("return 1")()
 end
 
 function empty()
