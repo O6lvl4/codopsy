@@ -31,6 +31,7 @@ pub enum SourceLanguage {
     Erlang,
     Gleam,
     Kotlin,
+    Crystal,
     Dart,
     Elm,
     Groovy,
@@ -98,6 +99,7 @@ impl SourceLanguage {
             Erlang => tree_sitter_erlang::LANGUAGE.into(),
             Gleam => tree_sitter_gleam::LANGUAGE.into(),
             Kotlin => tree_sitter_kotlin::LANGUAGE.into(),
+            Crystal => tree_sitter_crystal::LANGUAGE.into(),
             Dart => tree_sitter_dart::LANGUAGE.into(),
             Elm => tree_sitter_elm::LANGUAGE.into(),
             Groovy => tree_sitter_groovy::LANGUAGE.into(),
@@ -112,7 +114,7 @@ const LANGUAGE_NAMES: &[&str] = &[
     "Bash", "HTML", "CSS", "JSON", "OCaml",
     "Swift", "Lua", "Zig", "Elixir", "YAML", "Almide",
     "Clojure", "Erlang", "Gleam",
-    "Kotlin", "Dart", "Elm", "Groovy", "Julia",
+    "Kotlin", "Crystal", "Dart", "Elm", "Groovy", "Julia",
 ];
 
 pub fn get_language(file_path: &str) -> Option<SourceLanguage> {
@@ -158,6 +160,7 @@ const EXT_LANGUAGE_MAP: &[(&[&str], SourceLanguage)] = &[
     (&["erl", "hrl"], SourceLanguage::Erlang),
     (&["gleam"], SourceLanguage::Gleam),
     (&["kt", "kts"], SourceLanguage::Kotlin),
+    (&["cr"], SourceLanguage::Crystal),
     (&["dart"], SourceLanguage::Dart),
     (&["elm"], SourceLanguage::Elm),
     (&["groovy", "gvy", "gy", "gsh"], SourceLanguage::Groovy),

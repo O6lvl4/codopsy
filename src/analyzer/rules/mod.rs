@@ -3,6 +3,7 @@ pub mod bug_detection;
 pub mod c_rules;
 pub mod clojure_rules;
 pub mod control_flow;
+pub mod crystal_rules;
 pub mod dart_rules;
 pub mod elixir_rules;
 pub mod elm_rules;

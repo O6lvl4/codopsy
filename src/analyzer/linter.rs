@@ -10,6 +10,7 @@ use super::rules::bug_detection::*;
 use super::rules::c_rules::*;
 use super::rules::clojure_rules;
 use super::rules::control_flow::*;
+use super::rules::crystal_rules;
 use super::rules::dart_rules;
 use super::rules::elixir_rules::*;
 use super::rules::elm_rules;
@@ -251,6 +252,15 @@ const KOTLIN_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("prefer-val", Severity::Info, kotlin_rules::check_prefer_val),
 ];
 
+/// Rules that only apply to Crystal files.
+const CRYSTAL_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
+    ("no-puts", Severity::Info, crystal_rules::check_no_puts),
+    ("no-raise-string", Severity::Warning, crystal_rules::check_no_raise_string),
+    ("no-rescue-exception", Severity::Warning, crystal_rules::check_no_rescue_exception),
+    ("no-shell", Severity::Error, crystal_rules::check_no_shell),
+    ("no-sleep", Severity::Warning, crystal_rules::check_no_sleep),
+];
+
 /// Rules that only apply to Dart files.
 const DART_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
     ("no-print", Severity::Info, dart_rules::check_no_print),
@@ -381,6 +391,7 @@ pub fn lint_file(
         SourceLanguage::Haskell => ctx.run_rules(HASKELL_RULES),
         SourceLanguage::Scala => ctx.run_rules(SCALA_RULES),
         SourceLanguage::Kotlin => ctx.run_rules(KOTLIN_RULES),
+        SourceLanguage::Crystal => ctx.run_rules(CRYSTAL_RULES),
         SourceLanguage::Dart => ctx.run_rules(DART_RULES),
         SourceLanguage::Elm => ctx.run_rules(ELM_RULES),
         SourceLanguage::Groovy => ctx.run_rules(GROOVY_RULES),
