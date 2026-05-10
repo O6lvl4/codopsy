@@ -2,9 +2,10 @@ use ignore::WalkBuilder;
 use std::path::Path;
 
 use crate::analyzer::ast_utils::get_language;
+use crate::config::CodopsyConfig;
 
 /// Path fragments that should always be skipped.
-const SKIP_DIRS: &[&str] = &[
+const DEFAULT_SKIP_DIRS: &[&str] = &[
     "node_modules",
     "/dist/",
     "/target/",
@@ -21,7 +22,7 @@ const SKIP_DIRS: &[&str] = &[
 ];
 
 /// File names that should be skipped (exact suffix match).
-const SKIP_FILES: &[&str] = &[
+const DEFAULT_SKIP_FILES: &[&str] = &[
     "package-lock.json",
     "package.json",
     "tsconfig.json",
@@ -32,6 +33,21 @@ const SKIP_FILES: &[&str] = &[
 ];
 
 pub fn find_source_files(target_dir: &Path) -> Vec<String> {
+    find_source_files_with_config(target_dir, &CodopsyConfig::default())
+}
+
+pub fn find_source_files_with_config(target_dir: &Path, config: &CodopsyConfig) -> Vec<String> {
+    let extra_skip_dirs: Vec<&str> = config
+        .skip_dirs
+        .as_ref()
+        .map(|v| v.iter().map(|s| s.as_str()).collect())
+        .unwrap_or_default();
+    let extra_skip_files: Vec<&str> = config
+        .skip_files
+        .as_ref()
+        .map(|v| v.iter().map(|s| s.as_str()).collect())
+        .unwrap_or_default();
+
     let mut files = Vec::new();
 
     let walker = WalkBuilder::new(target_dir)
@@ -51,7 +67,7 @@ pub fn find_source_files(target_dir: &Path) -> Vec<String> {
             continue;
         }
 
-        if should_skip(&path_str) {
+        if should_skip(&path_str, &extra_skip_dirs, &extra_skip_files) {
             continue;
         }
 
@@ -62,8 +78,10 @@ pub fn find_source_files(target_dir: &Path) -> Vec<String> {
     files
 }
 
-fn should_skip(path: &str) -> bool {
-    SKIP_DIRS.iter().any(|d| path.contains(d))
-        || SKIP_FILES.iter().any(|f| path.ends_with(f))
+fn should_skip(path: &str, extra_dirs: &[&str], extra_files: &[&str]) -> bool {
+    DEFAULT_SKIP_DIRS.iter().any(|d| path.contains(d))
+        || extra_dirs.iter().any(|d| path.contains(d))
+        || DEFAULT_SKIP_FILES.iter().any(|f| path.ends_with(f))
+        || extra_files.iter().any(|f| path.ends_with(f))
         || path.ends_with("/dist")
 }

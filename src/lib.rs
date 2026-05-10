@@ -3,6 +3,7 @@ pub mod analyzer;
 pub mod baseline;
 pub mod commands;
 pub mod config;
+pub mod defaults;
 pub mod hotspot;
 pub mod reporter;
 pub mod scorer;

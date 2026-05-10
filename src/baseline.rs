@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::types::AnalysisResult;
+use crate::types::{AnalysisResult, ComparisonStatus};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,7 +41,7 @@ pub struct Baseline {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaselineComparison {
-    pub status: String, // "improved" | "degraded" | "unchanged"
+    pub status: ComparisonStatus,
     pub overall: BaselineOverallComparison,
     pub new_files: usize,
     pub removed_files: usize,
@@ -153,6 +153,8 @@ pub fn load_baseline(path: &Path) -> Option<Baseline> {
     serde_json::from_str(&content).ok()
 }
 
+/// Determine the overall comparison status.
+/// Score delta takes priority; equal score falls back to issue delta.
 pub fn compare_with_baseline(result: &AnalysisResult, baseline: &Baseline) -> BaselineComparison {
     let current = create_baseline(result);
 
@@ -183,16 +185,22 @@ pub fn compare_with_baseline(result: &AnalysisResult, baseline: &Baseline) -> Ba
     let score_delta = current.overall.score as i64 - baseline.overall.score as i64;
     let issues_delta = current.overall.total_issues as i64 - baseline.overall.total_issues as i64;
 
-    let status = if score_delta > 0 || issues_delta < 0 {
-        "improved"
-    } else if score_delta < 0 || issues_delta > 0 {
-        "degraded"
+    // Determine status: score improvement takes priority, but conflicting signals
+    // (score up + issues up, or score down + issues down) are resolved by score.
+    let status = if score_delta > 0 {
+        ComparisonStatus::Improved
+    } else if score_delta < 0 {
+        ComparisonStatus::Degraded
+    } else if issues_delta < 0 {
+        ComparisonStatus::Improved
+    } else if issues_delta > 0 {
+        ComparisonStatus::Degraded
     } else {
-        "unchanged"
+        ComparisonStatus::Unchanged
     };
 
     BaselineComparison {
-        status: status.to_string(),
+        status,
         overall: BaselineOverallComparison {
             issues_delta,
             score_delta,
@@ -203,5 +211,96 @@ pub fn compare_with_baseline(result: &AnalysisResult, baseline: &Baseline) -> Ba
         removed_files,
         degraded_files,
         improved_files,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::*;
+    use std::collections::HashMap;
+
+    fn make_result(score: i32, issues: usize) -> AnalysisResult {
+        let mut issues_by_severity = HashMap::new();
+        issues_by_severity.insert("error".to_string(), 0);
+        issues_by_severity.insert("warning".to_string(), issues);
+        issues_by_severity.insert("info".to_string(), 0);
+
+        AnalysisResult {
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            target_dir: "/test".to_string(),
+            files: vec![],
+            summary: Summary {
+                total_files: 0,
+                total_issues: issues,
+                issues_by_severity,
+                average_complexity: 0.0,
+                max_complexity: None,
+            },
+            score: Some(ProjectScore {
+                overall: score,
+                grade: to_grade(score),
+                distribution: HashMap::new(),
+            }),
+        }
+    }
+
+    #[test]
+    fn unchanged_when_equal() {
+        let result = make_result(85, 5);
+        let baseline = create_baseline(&result);
+        let comparison = compare_with_baseline(&result, &baseline);
+        assert_eq!(comparison.status, ComparisonStatus::Unchanged);
+        assert_eq!(comparison.overall.score_delta, 0);
+        assert_eq!(comparison.overall.issues_delta, 0);
+    }
+
+    #[test]
+    fn improved_when_score_increases() {
+        let before = make_result(70, 10);
+        let after = make_result(85, 10);
+        let baseline = create_baseline(&before);
+        let comparison = compare_with_baseline(&after, &baseline);
+        assert_eq!(comparison.status, ComparisonStatus::Improved);
+        assert!(comparison.overall.score_delta > 0);
+    }
+
+    #[test]
+    fn degraded_when_score_drops() {
+        let before = make_result(90, 2);
+        let after = make_result(70, 2);
+        let baseline = create_baseline(&before);
+        let comparison = compare_with_baseline(&after, &baseline);
+        assert_eq!(comparison.status, ComparisonStatus::Degraded);
+    }
+
+    #[test]
+    fn score_delta_takes_priority_over_issues() {
+        // Score improved but issues increased → improved (score wins)
+        let before = make_result(70, 5);
+        let after = make_result(85, 10);
+        let baseline = create_baseline(&before);
+        let comparison = compare_with_baseline(&after, &baseline);
+        assert_eq!(comparison.status, ComparisonStatus::Improved);
+    }
+
+    #[test]
+    fn issues_delta_used_when_score_equal() {
+        // Same score, fewer issues → improved
+        let before = make_result(80, 10);
+        let after = make_result(80, 5);
+        let baseline = create_baseline(&before);
+        let comparison = compare_with_baseline(&after, &baseline);
+        assert_eq!(comparison.status, ComparisonStatus::Improved);
+    }
+
+    #[test]
+    fn baseline_serialization_roundtrip() {
+        let result = make_result(85, 3);
+        let baseline = create_baseline(&result);
+        let json = serde_json::to_string_pretty(&baseline).unwrap();
+        let parsed: Baseline = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.overall.score, 85);
+        assert_eq!(parsed.version, 1);
     }
 }

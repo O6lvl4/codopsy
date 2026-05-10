@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::defaults;
 use crate::types::FileAnalysis;
 use crate::utils::git::get_file_churn_stats;
 
@@ -23,9 +24,9 @@ pub struct HotspotResult {
 }
 
 fn classify_risk(score: f64) -> &'static str {
-    if score > 100.0 {
+    if score > defaults::HOTSPOT_RISK_HIGH {
         "high"
-    } else if score > 30.0 {
+    } else if score > defaults::HOTSPOT_RISK_MEDIUM {
         "medium"
     } else {
         "low"
@@ -69,8 +70,11 @@ pub fn detect_hotspots(
                 .max()
                 .unwrap_or(0);
 
-            let score =
-                churn.commits as f64 * (max_cyclomatic as f64 + max_cognitive as f64 * 0.5);
+            // Hotspot score: churn * (cyclomatic + weighted cognitive).
+            // Cognitive is weighted at 0.5x because it often correlates with
+            // cyclomatic and we want to avoid double-counting.
+            let score = churn.commits as f64
+                * (max_cyclomatic as f64 + max_cognitive as f64 * defaults::HOTSPOT_COGNITIVE_WEIGHT);
 
             Some(HotspotInfo {
                 file: rel_path,
@@ -84,7 +88,7 @@ pub fn detect_hotspots(
         })
         .collect();
 
-    hotspots.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    hotspots.sort_by(|a, b| b.score.total_cmp(&a.score));
     hotspots.truncate(top);
 
     HotspotResult {

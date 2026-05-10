@@ -1,6 +1,6 @@
 use crate::baseline::BaselineComparison;
 use crate::hotspot::HotspotResult;
-use crate::types::{AnalysisResult, FileAnalysis};
+use crate::types::{AnalysisResult, ComparisonStatus, FileAnalysis};
 
 pub fn print_summary(result: &AnalysisResult) {
     eprintln!();
@@ -130,10 +130,10 @@ pub fn print_hotspots(result: &HotspotResult) {
 }
 
 pub fn print_baseline_comparison(comparison: &BaselineComparison) {
-    let status_label = match comparison.status.as_str() {
-        "improved" => "\x1b[32mIMPROVED\x1b[0m",
-        "degraded" => "\x1b[31mDEGRADED\x1b[0m",
-        _ => "\x1b[34mUNCHANGED\x1b[0m",
+    let status_label = match comparison.status {
+        ComparisonStatus::Improved => "\x1b[32mIMPROVED\x1b[0m",
+        ComparisonStatus::Degraded => "\x1b[31mDEGRADED\x1b[0m",
+        ComparisonStatus::Unchanged => "\x1b[34mUNCHANGED\x1b[0m",
     };
 
     let arrow = if comparison.overall.score_delta > 0 {

@@ -16,8 +16,8 @@ pub struct AnalyzeOptions {
 impl Default for AnalyzeOptions {
     fn default() -> Self {
         Self {
-            max_complexity: 10,
-            max_cognitive_complexity: 15,
+            max_complexity: crate::defaults::MAX_COMPLEXITY,
+            max_cognitive_complexity: crate::defaults::MAX_COGNITIVE_COMPLEXITY,
         }
     }
 }

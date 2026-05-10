@@ -20,11 +20,18 @@ pub enum RuleConfig {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CodopsyConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plugins: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rules: Option<HashMap<String, RuleConfig>>,
+    /// Additional directory patterns to skip (merged with built-in defaults).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skip_dirs: Option<Vec<String>>,
+    /// Additional file patterns to skip (merged with built-in defaults).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skip_files: Option<Vec<String>>,
 }
 
 impl CodopsyConfig {
@@ -87,9 +94,73 @@ pub fn load_config(target_dir: &Path) -> CodopsyConfig {
 fn try_load_from(dir: &Path) -> Option<CodopsyConfig> {
     let path = dir.join(CONFIG_FILENAME);
     let content = std::fs::read_to_string(&path).ok()?;
-    serde_json::from_str(&content).ok()
+    match serde_json::from_str(&content) {
+        Ok(config) => Some(config),
+        Err(e) => {
+            eprintln!(
+                "Warning: invalid config in {}: {}",
+                path.display(),
+                e
+            );
+            None
+        }
+    }
 }
 
 fn dirs_home() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::Severity;
+
+    #[test]
+    fn default_config_has_no_rules() {
+        let config = CodopsyConfig::default();
+        assert!(config.rules.is_none());
+        assert!(!config.is_rule_disabled("no-any"));
+        assert!(config.get_rule_severity("no-any").is_none());
+        assert!(config.get_rule_max("max-lines").is_none());
+    }
+
+    #[test]
+    fn parse_severity_rule() {
+        let json = r#"{ "rules": { "no-any": "error" } }"#;
+        let config: CodopsyConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.get_rule_severity("no-any"), Some(Severity::Error));
+        assert!(!config.is_rule_disabled("no-any"));
+    }
+
+    #[test]
+    fn parse_disabled_rule() {
+        let json = r#"{ "rules": { "no-console": false } }"#;
+        let config: CodopsyConfig = serde_json::from_str(json).unwrap();
+        assert!(config.is_rule_disabled("no-console"));
+    }
+
+    #[test]
+    fn parse_options_rule() {
+        let json = r#"{ "rules": { "max-lines": { "severity": "warning", "max": 500 } } }"#;
+        let config: CodopsyConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.get_rule_severity("max-lines"), Some(Severity::Warning));
+        assert_eq!(config.get_rule_max("max-lines"), Some(500));
+    }
+
+    #[test]
+    fn parse_skip_dirs() {
+        let json = r#"{ "skipDirs": ["/custom/"] }"#;
+        let config: CodopsyConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.skip_dirs.as_ref().unwrap(), &["/custom/"]);
+    }
+
+    #[test]
+    fn unknown_rule_returns_none() {
+        let json = r#"{ "rules": {} }"#;
+        let config: CodopsyConfig = serde_json::from_str(json).unwrap();
+        assert!(config.get_rule_severity("nonexistent").is_none());
+        assert!(config.get_rule_max("nonexistent").is_none());
+        assert!(!config.is_rule_disabled("nonexistent"));
+    }
 }

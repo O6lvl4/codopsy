@@ -31,16 +31,76 @@ impl std::fmt::Display for Grade {
 }
 
 pub fn to_grade(score: i32) -> Grade {
-    if score >= 90 {
+    use crate::defaults;
+    if score >= defaults::GRADE_A_MIN {
         Grade::A
-    } else if score >= 75 {
+    } else if score >= defaults::GRADE_B_MIN {
         Grade::B
-    } else if score >= 60 {
+    } else if score >= defaults::GRADE_C_MIN {
         Grade::C
-    } else if score >= 40 {
+    } else if score >= defaults::GRADE_D_MIN {
         Grade::D
     } else {
         Grade::F
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ComparisonStatus {
+    Improved,
+    Degraded,
+    Unchanged,
+}
+
+impl std::fmt::Display for ComparisonStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Improved => write!(f, "improved"),
+            Self::Degraded => write!(f, "degraded"),
+            Self::Unchanged => write!(f, "unchanged"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::defaults;
+
+    #[test]
+    fn grade_boundaries() {
+        assert_eq!(to_grade(100), Grade::A);
+        assert_eq!(to_grade(defaults::GRADE_A_MIN), Grade::A);
+        assert_eq!(to_grade(defaults::GRADE_A_MIN - 1), Grade::B);
+        assert_eq!(to_grade(defaults::GRADE_B_MIN), Grade::B);
+        assert_eq!(to_grade(defaults::GRADE_B_MIN - 1), Grade::C);
+        assert_eq!(to_grade(defaults::GRADE_C_MIN), Grade::C);
+        assert_eq!(to_grade(defaults::GRADE_C_MIN - 1), Grade::D);
+        assert_eq!(to_grade(defaults::GRADE_D_MIN), Grade::D);
+        assert_eq!(to_grade(defaults::GRADE_D_MIN - 1), Grade::F);
+        assert_eq!(to_grade(0), Grade::F);
+    }
+
+    #[test]
+    fn grade_display() {
+        assert_eq!(Grade::A.to_string(), "A");
+        assert_eq!(Grade::F.to_string(), "F");
+    }
+
+    #[test]
+    fn comparison_status_display() {
+        assert_eq!(ComparisonStatus::Improved.to_string(), "improved");
+        assert_eq!(ComparisonStatus::Degraded.to_string(), "degraded");
+        assert_eq!(ComparisonStatus::Unchanged.to_string(), "unchanged");
+    }
+
+    #[test]
+    fn severity_serialization() {
+        let json = serde_json::to_string(&Severity::Error).unwrap();
+        assert_eq!(json, "\"error\"");
+        let parsed: Severity = serde_json::from_str("\"warning\"").unwrap();
+        assert_eq!(parsed, Severity::Warning);
     }
 }
 

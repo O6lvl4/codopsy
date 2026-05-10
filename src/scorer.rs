@@ -1,15 +1,12 @@
 use std::collections::HashMap;
 
+use crate::defaults;
 use crate::types::{
     to_grade, AnalysisResult, FileAnalysis, FileScore, Grade, ProjectScore, Severity,
 };
 
-const STRUCTURE_RULES: &[(&str, f64, f64)] = &[
-    ("max-lines", 10.0, 12.0),
-    ("max-depth", 4.0, 12.0),
-    ("max-params", 3.0, 10.0),
-];
-
+/// Rules excluded from the "issues" scoring component
+/// because they are already accounted for in complexity or structure scoring.
 const EXCLUDED_FROM_ISSUES: &[&str] = &[
     "max-lines",
     "max-depth",
@@ -19,20 +16,27 @@ const EXCLUDED_FROM_ISSUES: &[&str] = &[
 ];
 
 fn clamp_min_0(value: f64) -> f64 {
-    if value < 0.0 { 0.0 } else { value }
+    value.max(0.0)
 }
 
+/// Complexity component (max weight: WEIGHT_COMPLEXITY = 35).
+/// Penalizes functions that exceed CC/cognitive thresholds.
+/// Penalty per function is capped to prevent a single outlier from dominating.
 fn score_complexity(analysis: &FileAnalysis) -> f64 {
     let mut penalty = 0.0;
     for func in &analysis.complexity.functions {
-        let cc_excess = (func.complexity as f64 - 10.0).max(0.0);
-        let cog_excess = (func.cognitive_complexity as f64 - 15.0).max(0.0);
-        penalty += (cc_excess * 2.0).min(15.0);
-        penalty += (cog_excess * 1.5).min(12.0);
+        let cc_excess = (func.complexity as f64 - defaults::CC_THRESHOLD).max(0.0);
+        let cog_excess = (func.cognitive_complexity as f64 - defaults::COG_THRESHOLD).max(0.0);
+        penalty += (cc_excess * defaults::CC_PENALTY_RATE).min(defaults::CC_PENALTY_CAP);
+        penalty += (cog_excess * defaults::COG_PENALTY_RATE).min(defaults::COG_PENALTY_CAP);
     }
-    clamp_min_0(35.0 - penalty)
+    clamp_min_0(defaults::WEIGHT_COMPLEXITY - penalty)
 }
 
+/// Issues component (max weight: WEIGHT_ISSUES = 40).
+/// Errors are penalized linearly; warnings use sub-linear scaling
+/// (exponent 0.7) so that many minor warnings don't outweigh a few errors.
+/// Info-level issues use sqrt scaling for minimal impact.
 fn score_issues(analysis: &FileAnalysis) -> f64 {
     let mut rule_groups: HashMap<&str, (Severity, usize)> = HashMap::new();
 
@@ -50,18 +54,20 @@ fn score_issues(analysis: &FileAnalysis) -> f64 {
     for &(severity, count) in rule_groups.values() {
         let count_f = count as f64;
         match severity {
-            Severity::Error => penalty += 8.0 * count_f,
-            Severity::Warning => penalty += 4.0 * count_f.powf(0.7),
+            Severity::Error => penalty += defaults::ERROR_PENALTY * count_f,
+            Severity::Warning => penalty += defaults::WARNING_PENALTY * count_f.powf(defaults::WARNING_EXPONENT),
             Severity::Info => penalty += count_f.sqrt(),
         }
     }
 
-    clamp_min_0((40.0 - penalty).round())
+    clamp_min_0((defaults::WEIGHT_ISSUES - penalty).round())
 }
 
+/// Structure component (max weight: WEIGHT_STRUCTURE = 25).
+/// Penalizes threshold violations (max-lines, max-depth, max-params).
 fn score_structure(analysis: &FileAnalysis) -> f64 {
-    let mut score = 25.0;
-    for &(rule, per_violation, cap) in STRUCTURE_RULES {
+    let mut score = defaults::WEIGHT_STRUCTURE;
+    for &(rule, per_violation, cap) in defaults::STRUCTURE_PENALTIES {
         let count = analysis
             .issues
             .iter()
@@ -106,6 +112,7 @@ pub fn calculate_project_score(result: &AnalysisResult) -> ProjectScore {
         *distribution.entry(fs.grade.to_string()).or_default() += 1;
     }
 
+    // Weighted average: files with more functions carry more weight (sqrt scaling).
     let mut weighted_sum = 0.0;
     let mut total_weight = 0.0;
     for (i, file) in result.files.iter().enumerate() {
@@ -121,9 +128,11 @@ pub fn calculate_project_score(result: &AnalysisResult) -> ProjectScore {
         100
     };
 
-    // Issue density penalty
+    // Issue density penalty: penalizes projects with many scattered issues.
     let total_issues: usize = result.files.iter().map(|f| f.issues.len()).sum();
-    let density_penalty = ((total_issues as f64).sqrt() * 0.8).round().min(15.0) as i32;
+    let density_penalty = ((total_issues as f64).sqrt() * defaults::DENSITY_PENALTY_RATE)
+        .round()
+        .min(defaults::DENSITY_PENALTY_CAP) as i32;
 
     let score = (base_score - density_penalty).max(0);
 
@@ -131,5 +140,107 @@ pub fn calculate_project_score(result: &AnalysisResult) -> ProjectScore {
         overall: score,
         grade: to_grade(score),
         distribution,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{ComplexityResult, FunctionComplexity, Issue};
+
+    fn make_analysis(functions: Vec<FunctionComplexity>, issues: Vec<Issue>) -> FileAnalysis {
+        FileAnalysis {
+            file: "test.ts".to_string(),
+            complexity: ComplexityResult {
+                cyclomatic: functions.iter().map(|f| f.complexity).max().unwrap_or(0),
+                cognitive: functions.iter().map(|f| f.cognitive_complexity).max().unwrap_or(0),
+                functions,
+            },
+            issues,
+            score: None,
+        }
+    }
+
+    fn make_issue(rule: &str, severity: Severity) -> Issue {
+        Issue {
+            file: "test.ts".to_string(),
+            line: 1,
+            column: 1,
+            severity,
+            rule: rule.to_string(),
+            message: "test".to_string(),
+        }
+    }
+
+    #[test]
+    fn perfect_score_for_clean_file() {
+        let analysis = make_analysis(
+            vec![FunctionComplexity {
+                name: "main".to_string(),
+                line: 1,
+                complexity: 1,
+                cognitive_complexity: 0,
+            }],
+            vec![],
+        );
+        let score = calculate_file_score(&analysis);
+        assert_eq!(score.score, 100);
+        assert_eq!(score.grade, Grade::A);
+    }
+
+    #[test]
+    fn high_complexity_reduces_score() {
+        let analysis = make_analysis(
+            vec![FunctionComplexity {
+                name: "complex".to_string(),
+                line: 1,
+                complexity: 25,
+                cognitive_complexity: 30,
+            }],
+            vec![],
+        );
+        let score = calculate_file_score(&analysis);
+        assert!(score.score < 80, "Score should be reduced: {}", score.score);
+    }
+
+    #[test]
+    fn errors_penalize_more_than_warnings() {
+        let error_analysis = make_analysis(vec![], vec![make_issue("no-eval", Severity::Error)]);
+        let warning_analysis = make_analysis(vec![], vec![make_issue("no-var", Severity::Warning)]);
+
+        let error_score = calculate_file_score(&error_analysis);
+        let warning_score = calculate_file_score(&warning_analysis);
+        assert!(error_score.score < warning_score.score);
+    }
+
+    #[test]
+    fn threshold_issues_excluded_from_issue_scoring() {
+        let analysis = make_analysis(
+            vec![],
+            vec![make_issue("max-complexity", Severity::Warning)],
+        );
+        // max-complexity is excluded from issue scoring, only affects structure
+        let score = score_issues(&analysis);
+        assert_eq!(score, defaults::WEIGHT_ISSUES);
+    }
+
+    #[test]
+    fn empty_project_gets_perfect_score() {
+        let result = AnalysisResult {
+            timestamp: "test".to_string(),
+            target_dir: ".".to_string(),
+            files: vec![],
+            summary: crate::types::Summary {
+                total_files: 0,
+                total_issues: 0,
+                issues_by_severity: HashMap::new(),
+                average_complexity: 0.0,
+                max_complexity: None,
+            },
+            score: None,
+        };
+        let project_score = calculate_project_score(&result);
+        assert_eq!(project_score.overall, 100);
+        assert_eq!(project_score.grade, Grade::A);
     }
 }

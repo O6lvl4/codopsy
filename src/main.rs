@@ -12,7 +12,7 @@ use codopsy::config::load_config;
 use codopsy::hotspot::detect_hotspots;
 use codopsy::reporter::format_report;
 use codopsy::types::AnalysisResult;
-use codopsy::utils::file::find_source_files;
+use codopsy::utils::file::find_source_files_with_config;
 use codopsy::utils::git::{get_changed_files, is_git_repository};
 
 #[derive(Parser)]
@@ -124,7 +124,7 @@ fn run_analyze(args: AnalyzeArgs) {
         eprintln!("Analyzing {} ...", target_dir.display());
     }
 
-    let files = resolve_files(&target_dir, args.diff.as_deref(), args.quiet);
+    let files = resolve_files(&target_dir, args.diff.as_deref(), args.quiet, &config);
     if files.is_empty() {
         return;
     }
@@ -156,8 +156,8 @@ fn run_analyze(args: AnalyzeArgs) {
     check_fail_conditions(&result, args.fail_on_warning, args.fail_on_error);
 }
 
-fn resolve_files(target_dir: &Path, diff: Option<&str>, quiet: bool) -> Vec<String> {
-    let mut files = find_source_files(target_dir);
+fn resolve_files(target_dir: &Path, diff: Option<&str>, quiet: bool, config: &codopsy::config::CodopsyConfig) -> Vec<String> {
+    let mut files = find_source_files_with_config(target_dir, config);
 
     if let Some(base_ref) = diff {
         if !is_git_repository(target_dir) {
@@ -204,7 +204,7 @@ fn handle_baseline(result: &AnalysisResult, path: &str, do_save: bool, no_degrad
         if !is_stdout {
             let comparison = compare_with_baseline(result, &baseline);
             print_baseline_comparison(&comparison);
-            if no_degradation && comparison.status == "degraded" {
+            if no_degradation && comparison.status == codopsy::types::ComparisonStatus::Degraded {
                 std::process::exit(1);
             }
         }

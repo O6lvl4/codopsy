@@ -16,11 +16,17 @@ pub fn get_changed_files(dir: &Path, base: &str) -> Vec<String> {
         .args(["merge-base", base, "HEAD"])
         .current_dir(dir)
         .output()
+        .map_err(|e| eprintln!("Warning: git merge-base failed: {e}"))
         .ok()
         .and_then(|o| {
             if o.status.success() {
                 Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
             } else {
+                eprintln!(
+                    "Warning: git merge-base exited with {}: {}",
+                    o.status,
+                    String::from_utf8_lossy(&o.stderr).trim()
+                );
                 None
             }
         });
@@ -34,12 +40,14 @@ pub fn get_changed_files(dir: &Path, base: &str) -> Vec<String> {
         .args(["diff", "--name-only", "--diff-filter=ACMR", &merge_base])
         .current_dir(dir)
         .output()
+        .map_err(|e| eprintln!("Warning: git diff failed: {e}"))
         .ok();
 
     let repo_root = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .current_dir(dir)
         .output()
+        .map_err(|e| eprintln!("Warning: git rev-parse failed: {e}"))
         .ok()
         .and_then(|o| {
             if o.status.success() {
@@ -79,6 +87,7 @@ pub fn get_file_churn_stats(dir: &Path, since: &str) -> HashMap<String, ChurnSta
         ])
         .current_dir(dir)
         .output()
+        .map_err(|e| eprintln!("Warning: git log for churn stats failed: {e}"))
         .ok();
 
     let output = match output {
@@ -97,8 +106,11 @@ pub fn get_file_churn_stats(dir: &Path, since: &str) -> HashMap<String, ChurnSta
             continue;
         }
 
-        // Check if this is a header line: 40-char hex + space + author
-        if trimmed.len() > 41 && trimmed.chars().take(40).all(|c| c.is_ascii_hexdigit()) && trimmed.as_bytes()[40] == b' ' {
+        // Header line: 40-char hex hash + space + author name
+        if trimmed.len() > 41
+            && trimmed.as_bytes()[40] == b' '
+            && trimmed[..40].bytes().all(|b| b.is_ascii_hexdigit())
+        {
             current_hash = trimmed[..40].to_string();
             current_author = trimmed[41..].to_string();
             continue;
