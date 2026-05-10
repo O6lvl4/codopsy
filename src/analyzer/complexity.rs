@@ -2,7 +2,10 @@ use tree_sitter::{Node, Tree};
 
 use crate::types::{ComplexityResult, FunctionComplexity};
 
-use super::ast_utils::{get_function_name, is_function_node, node_line};
+use super::ast_utils::{
+    clojure_defn_name, elixir_def_name, erlang_fun_name, get_function_name,
+    is_clojure_defn, is_elixir_def_call, is_erlang_fun_decl, is_function_node, node_line,
+};
 use super::node_classify::*;
 
 /// Calculate cyclomatic complexity for a function node.
@@ -23,6 +26,18 @@ fn calculate_cyclomatic(node: &Node, source: &[u8]) -> usize {
                 }
             }
         }
+        // Clojure: branching forms are list_lit starting with if/cond/case/when/and/or
+        if node.kind() == "list_lit" {
+            if let Some(first) = first_sym_text(node, source) {
+                match first {
+                    "if" | "if-let" | "if-not" | "if-some" | "when" | "when-let"
+                    | "when-not" | "when-first" => *complexity += 1,
+                    "cond" | "condp" | "case" => *complexity += 1,
+                    "and" | "or" => *complexity += 1,
+                    _ => {}
+                }
+            }
+        }
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             walk(&child, root, complexity, source);
@@ -34,6 +49,17 @@ fn calculate_cyclomatic(node: &Node, source: &[u8]) -> usize {
         walk(&child, node, &mut complexity, source);
     }
     complexity
+}
+
+/// Extract the text of the first sym_lit child (for Clojure form detection).
+fn first_sym_text<'a>(node: &Node, source: &'a [u8]) -> Option<&'a str> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "sym_lit" {
+            return Some(super::ast_utils::node_text(&child, source));
+        }
+    }
+    None
 }
 
 /// Collect logical operator kinds from a binary expression tree (flattened).
@@ -203,6 +229,27 @@ pub fn analyze_complexity(tree: &Tree, source: &[u8]) -> ComplexityResult {
                 complexity: 1 + calculate_cyclomatic(node, source),
                 cognitive_complexity: calculate_cognitive_complexity(node, source),
             });
+        } else if is_elixir_def_call(node, source) {
+            functions.push(FunctionComplexity {
+                name: elixir_def_name(node, source),
+                line: node_line(node),
+                complexity: 1 + calculate_cyclomatic(node, source),
+                cognitive_complexity: calculate_cognitive_complexity(node, source),
+            });
+        } else if is_clojure_defn(node, source) {
+            functions.push(FunctionComplexity {
+                name: clojure_defn_name(node, source),
+                line: node_line(node),
+                complexity: 1 + calculate_cyclomatic(node, source),
+                cognitive_complexity: calculate_cognitive_complexity(node, source),
+            });
+        } else if is_erlang_fun_decl(node) {
+            functions.push(FunctionComplexity {
+                name: erlang_fun_name(node, source),
+                line: node_line(node),
+                complexity: 1 + calculate_cyclomatic(node, source),
+                cognitive_complexity: calculate_cognitive_complexity(node, source),
+            });
         }
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
@@ -216,4 +263,80 @@ pub fn analyze_complexity(tree: &Tree, source: &[u8]) -> ComplexityResult {
     let cognitive = functions.iter().map(|f| f.cognitive_complexity).max().unwrap_or(0);
 
     ComplexityResult { cyclomatic, cognitive, functions }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analyzer::ast_utils::{parse_source, SourceLanguage};
+
+    fn analyze_js(source: &str) -> ComplexityResult {
+        let tree = parse_source(source, SourceLanguage::JavaScript).unwrap();
+        analyze_complexity(&tree, source.as_bytes())
+    }
+
+    fn analyze_rust(source: &str) -> ComplexityResult {
+        let tree = parse_source(source, SourceLanguage::Rust).unwrap();
+        analyze_complexity(&tree, source.as_bytes())
+    }
+
+    #[test]
+    fn simple_function_has_baseline_cc() {
+        let result = analyze_js("function foo() { return 1; }");
+        // JS parser may produce nested function nodes; verify at least one function found
+        assert!(!result.functions.is_empty());
+        // CC baseline is at least 1 for any function
+        assert!(result.functions.iter().all(|f| f.complexity >= 1));
+        // A simple function with no branches has 0 cognitive complexity
+        assert!(result.functions.iter().any(|f| f.cognitive_complexity == 0));
+    }
+
+    #[test]
+    fn if_statement_increments_cc() {
+        let result = analyze_js("function foo(x) { if (x) { return 1; } return 0; }");
+        let base = analyze_js("function bar() { return 1; }");
+        // CC should be higher with an if
+        assert!(result.functions[0].complexity > base.functions[0].complexity);
+    }
+
+    #[test]
+    fn nested_if_increases_cognitive() {
+        let result = analyze_js(
+            "function foo(a, b) { if (a) { if (b) { return 1; } } return 0; }",
+        );
+        assert!(result.functions[0].cognitive_complexity >= 3);
+    }
+
+    #[test]
+    fn rust_function_baseline_cc() {
+        let result = analyze_rust("fn main() { let x = 1; }");
+        assert_eq!(result.functions.len(), 1);
+        assert!(result.functions[0].complexity >= 1);
+        assert_eq!(result.functions[0].name, "main");
+    }
+
+    #[test]
+    fn multiple_functions_detected() {
+        let result = analyze_js(
+            "function a() {} function b(x) { if (x) {} }",
+        );
+        assert!(result.functions.len() >= 2);
+    }
+
+    #[test]
+    fn logical_operators_add_cognitive() {
+        let result = analyze_js(
+            "function foo(a, b, c) { if (a && b || c) { return 1; } }",
+        );
+        // if: +1, && group: +1, || switch: +1 = cognitive >= 3
+        assert!(result.functions[0].cognitive_complexity >= 3);
+    }
+
+    #[test]
+    fn empty_source_no_functions() {
+        let result = analyze_js("");
+        assert!(result.functions.is_empty());
+        assert_eq!(result.cyclomatic, 0);
+        assert_eq!(result.cognitive, 0);
+    }
 }

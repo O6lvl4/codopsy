@@ -42,6 +42,14 @@ pub fn is_cc_increment(kind: &str) -> bool {
             | "guard"
             // Almide
             | "for_in_expression"
+            // Erlang
+            | "case_expr"
+            | "if_expr"
+            | "receive_expr"
+            | "try_expr"
+            | "cr_clause"
+            // Gleam
+            | "case_clause"
     )
 }
 
@@ -81,6 +89,11 @@ pub fn is_nesting_construct(kind: &str) -> bool {
             // Almide
             | "for_in_expression"
             | "do_expression"
+            // Erlang
+            | "case_expr"
+            | "receive_expr"
+            // Gleam
+            | "case"
     )
 }
 

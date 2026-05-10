@@ -27,6 +27,9 @@ pub enum SourceLanguage {
     Elixir,
     Yaml,
     Almide,
+    Clojure,
+    Erlang,
+    Gleam,
 }
 
 impl SourceLanguage {
@@ -44,6 +47,14 @@ impl SourceLanguage {
 
     pub fn is_markup_or_data(&self) -> bool {
         matches!(self, Self::Html | Self::Css | Self::Json | Self::Yaml)
+    }
+
+    pub fn is_beam(&self) -> bool {
+        matches!(self, Self::Elixir | Self::Erlang | Self::Gleam)
+    }
+
+    pub fn is_lisp(&self) -> bool {
+        matches!(self, Self::Clojure)
     }
 
     pub fn name(&self) -> &'static str {
@@ -78,6 +89,9 @@ impl SourceLanguage {
             Elixir => tree_sitter_elixir::LANGUAGE.into(),
             Yaml => tree_sitter_yaml::LANGUAGE.into(),
             Almide => tree_sitter_almide::LANGUAGE.into(),
+            Clojure => tree_sitter_clojure::LANGUAGE.into(),
+            Erlang => tree_sitter_erlang::LANGUAGE.into(),
+            Gleam => tree_sitter_gleam::LANGUAGE.into(),
         }
     }
 }
@@ -87,6 +101,7 @@ const LANGUAGE_NAMES: &[&str] = &[
     "C", "C++", "Java", "Ruby", "C#", "PHP", "Scala", "Haskell",
     "Bash", "HTML", "CSS", "JSON", "OCaml",
     "Swift", "Lua", "Zig", "Elixir", "YAML", "Almide",
+    "Clojure", "Erlang", "Gleam",
 ];
 
 pub fn get_language(file_path: &str) -> Option<SourceLanguage> {
@@ -128,6 +143,9 @@ const EXT_LANGUAGE_MAP: &[(&[&str], SourceLanguage)] = &[
     (&["ex", "exs"], SourceLanguage::Elixir),
     (&["yml", "yaml"], SourceLanguage::Yaml),
     (&["almd"], SourceLanguage::Almide),
+    (&["clj", "cljs", "cljc", "edn"], SourceLanguage::Clojure),
+    (&["erl", "hrl"], SourceLanguage::Erlang),
+    (&["gleam"], SourceLanguage::Gleam),
 ];
 
 pub fn parse_source(source: &str, language: SourceLanguage) -> Option<Tree> {
@@ -140,11 +158,10 @@ pub fn parse_source(source: &str, language: SourceLanguage) -> Option<Tree> {
     parser.parse(source.as_bytes(), None)
 }
 
-/// Check if a node is a function definition.
-/// Works for JS/TS, Rust, Go, Python, C/C++, Java, Ruby, C#, PHP, Scala, Haskell, OCaml.
-pub fn is_function_node(node: &Node) -> bool {
+/// Check if a node kind is a function-like construct.
+fn is_function_kind(kind: &str) -> bool {
     matches!(
-        node.kind(),
+        kind,
         // JS/TS (also shared by Go, PHP, Scala, Haskell)
         "function_declaration"
             | "function"
@@ -168,7 +185,6 @@ pub fn is_function_node(node: &Node) -> bool {
             | "method"
             | "singleton_method"
             | "lambda"
-            | "do_block"
             // PHP
             | "anonymous_function_creation_expression"
             // OCaml
@@ -176,7 +192,115 @@ pub fn is_function_node(node: &Node) -> bool {
             | "value_definition"
             // Almide
             | "test_declaration"
+            // Erlang
+            | "fun_expr"
+            // Gleam: uses "function" which is already listed above
     )
+}
+
+/// Check if a node is a function definition.
+/// Skips redundant nested function nodes (e.g. JS `function` inside `function_declaration`,
+/// Lua `function` inside `function_declaration`) to avoid double-counting.
+pub fn is_function_node(node: &Node) -> bool {
+    let kind = node.kind();
+    if !is_function_kind(kind) {
+        return false;
+    }
+    // `function` / `generator_function` nodes that are the direct body of a
+    // `function_declaration` / `generator_function_declaration` are redundant.
+    if matches!(kind, "function" | "generator_function") {
+        if let Some(parent) = node.parent() {
+            if is_function_kind(parent.kind()) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Check if a node is a Clojure function definition (defn, defn-).
+pub fn is_clojure_defn(node: &Node, source: &[u8]) -> bool {
+    if node.kind() != "list_lit" {
+        return false;
+    }
+    // First sym_lit child with name "defn" or "defn-"
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "sym_lit" {
+            let text = node_text(&child, source);
+            return matches!(text, "defn" | "defn-" | "defmacro");
+        }
+    }
+    false
+}
+
+/// Get the function name from a Clojure defn form.
+pub fn clojure_defn_name(node: &Node, source: &[u8]) -> String {
+    let mut cursor = node.walk();
+    let mut found_defn = false;
+    for child in node.children(&mut cursor) {
+        if child.kind() == "sym_lit" {
+            if !found_defn {
+                found_defn = true;
+                continue;
+            }
+            return node_text(&child, source).to_string();
+        }
+    }
+    "(anonymous)".to_string()
+}
+
+/// Check if a node is an Erlang function declaration.
+pub fn is_erlang_fun_decl(node: &Node) -> bool {
+    node.kind() == "fun_decl"
+}
+
+/// Get the function name from an Erlang fun_decl node.
+pub fn erlang_fun_name(node: &Node, source: &[u8]) -> String {
+    // fun_decl > function_clause > name: atom
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "function_clause" {
+            if let Some(name) = child.child_by_field_name("name") {
+                return node_text(&name, source).to_string();
+            }
+        }
+    }
+    "(anonymous)".to_string()
+}
+
+/// Check if a tree-sitter `call` node represents an Elixir function definition.
+/// Elixir uses `def`, `defp`, `defmacro`, `defmacrop` as function definition calls.
+pub fn is_elixir_def_call(node: &Node, source: &[u8]) -> bool {
+    if node.kind() != "call" {
+        return false;
+    }
+    if let Some(target) = node.child_by_field_name("target") {
+        let text = node_text(&target, source);
+        return matches!(text, "def" | "defp" | "defmacro" | "defmacrop");
+    }
+    false
+}
+
+/// Get the function name from an Elixir def call node.
+pub fn elixir_def_name(node: &Node, source: &[u8]) -> String {
+    // arguments > identifier (simple case)
+    // arguments > call > target > identifier (case with params)
+    if let Some(args) = find_child_by_kind(node, "arguments") {
+        let mut cursor = args.walk();
+        for child in args.children(&mut cursor) {
+            match child.kind() {
+                "identifier" => return node_text(&child, source).to_string(),
+                "call" => {
+                    if let Some(target) = child.child_by_field_name("target") {
+                        return node_text(&target, source).to_string();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    "(anonymous)".to_string()
 }
 
 /// Get a human-readable function name from a function node.
@@ -197,16 +321,47 @@ pub fn get_function_name<'a>(node: &Node<'a>, source: &'a [u8]) -> String {
             name_from_expr(node, source)
         }
         "let_binding" | "value_definition" => name_field_or(node, source, "(anonymous)"),
-        "do_block" => "(block)".to_string(),
         _ => "(anonymous)".to_string(),
     }
 }
 
 fn name_field_or(node: &Node, source: &[u8], fallback: &str) -> String {
-    node.child_by_field_name("name")
-        .or_else(|| find_child_by_kind(node, "function_name"))
-        .map(|n| node_text(&n, source).to_string())
-        .unwrap_or_else(|| fallback.to_string())
+    // Direct "name" field (most languages)
+    if let Some(n) = node.child_by_field_name("name") {
+        return node_text(&n, source).to_string();
+    }
+    // PHP uses "function_name" child
+    if let Some(n) = find_child_by_kind(node, "function_name") {
+        return node_text(&n, source).to_string();
+    }
+    // C/C++: name is inside "declarator" field (possibly nested as function_declarator)
+    if let Some(declarator) = node.child_by_field_name("declarator") {
+        return extract_declarator_name(&declarator, source)
+            .unwrap_or_else(|| fallback.to_string());
+    }
+    fallback.to_string()
+}
+
+/// Extract the function name from a C/C++ declarator node.
+/// Handles `function_declarator(declarator: identifier)` nesting.
+fn extract_declarator_name(node: &Node, source: &[u8]) -> Option<String> {
+    match node.kind() {
+        "identifier" => Some(node_text(node, source).to_string()),
+        "function_declarator" | "pointer_declarator" | "reference_declarator" => {
+            node.child_by_field_name("declarator")
+                .and_then(|d| extract_declarator_name(&d, source))
+        }
+        _ => {
+            // Try "declarator" field generically
+            node.child_by_field_name("declarator")
+                .and_then(|d| extract_declarator_name(&d, source))
+                .or_else(|| {
+                    // Fallback: first identifier child
+                    find_child_by_kind(node, "identifier")
+                        .map(|n| node_text(&n, source).to_string())
+                })
+        }
+    }
 }
 
 fn find_child_by_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
