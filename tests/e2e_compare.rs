@@ -38,6 +38,7 @@ fn try_run(cmd: &str, args: &[&str]) -> Option<String> {
     let output = Command::new(cmd)
         .args(args)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .env("PATH", augmented_path())
         .output()
         .ok()?;
     Some(format!(
@@ -47,8 +48,22 @@ fn try_run(cmd: &str, args: &[&str]) -> Option<String> {
     ))
 }
 
+/// Augment PATH to include common linter install locations.
+fn augmented_path() -> String {
+    let base = std::env::var("PATH").unwrap_or_default();
+    let home = std::env::var("HOME").unwrap_or_default();
+    let extras = [
+        format!("{home}/.local/bin"),
+        format!("{home}/.cargo/bin"),
+        "/usr/local/bin".to_string(),
+        "/opt/homebrew/bin".to_string(),
+    ];
+    format!("{}:{}", extras.join(":"), base)
+}
+
 fn try_qusp(args: &[&str]) -> Option<String> {
-    try_run("qusp", &[&["run"], args].concat())
+    let full: Vec<&str> = [&["run"], args].concat();
+    try_run("qusp", &full)
 }
 
 /// Try multiple commands in order, return the first that succeeds.
