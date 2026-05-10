@@ -1,8 +1,17 @@
 pub mod bug_detection;
+pub mod c_rules;
+pub mod clojure_rules;
 pub mod control_flow;
+pub mod elixir_rules;
+pub mod erlang_rules;
+pub mod gleam_rules;
+pub mod go_rules;
+pub mod java_rules;
+pub mod python_rules;
 pub mod rust_rules;
 pub mod style_rules;
 pub mod threshold_rules;
+pub mod universal_rules;
 
 use tree_sitter::{Node, Tree};
 
