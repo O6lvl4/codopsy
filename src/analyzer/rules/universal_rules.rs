@@ -92,7 +92,7 @@ fn is_function_keyword(kind: &str) -> bool {
     )
 }
 
-/// Check for TODO/FIXME/HACK/XXX comments in source code.
+/// Detect task-tag comments (e.g. to-do, fixme, hack, xxx) in source code.
 pub fn check_todo_comments(
     tree: &Tree,
     source: &[u8],

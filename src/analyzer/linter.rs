@@ -5,309 +5,10 @@ use crate::config::CodopsyConfig;
 use crate::defaults;
 use crate::types::{Issue, Severity};
 
-use super::rules::bash_rules;
-use super::rules::bug_detection::*;
-use super::rules::c_rules::*;
-use super::rules::clojure_rules;
-use super::rules::control_flow::*;
-use super::rules::crystal_rules;
-use super::rules::dart_rules;
-use super::rules::elixir_rules::*;
-use super::rules::elm_rules;
-use super::rules::erlang_rules::*;
-use super::rules::gleam_rules;
-use super::rules::go_rules;
-use super::rules::groovy_rules;
-use super::rules::haskell_rules;
-use super::rules::java_rules::*;
-use super::rules::julia_rules;
-use super::rules::kotlin_rules;
-use super::rules::lua_rules;
-use super::rules::php_rules;
-use super::rules::python_rules::*;
-use super::rules::ruby_rules;
-use super::rules::rust_rules;
-use super::rules::scala_rules;
-use super::rules::style_rules::*;
-use super::rules::swift_rules;
+use super::rule_registry::*;
 use super::rules::threshold_rules::*;
 use super::rules::universal_rules::*;
 use super::rules::unused;
-use super::rules::zig_rules;
-
-type SimpleCheckFn = fn(&Tree, &[u8], &str, Severity) -> Vec<Issue>;
-
-/// Rules that only apply to JS/TS files.
-const JS_TS_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-any", Severity::Warning, check_no_any),
-    ("no-console", Severity::Warning, check_no_console),
-    ("no-var", Severity::Warning, check_no_var),
-    ("eqeqeq", Severity::Warning, check_eqeqeq),
-    ("no-empty-function", Severity::Warning, check_no_empty_function),
-    ("no-nested-ternary", Severity::Warning, check_no_nested_ternary),
-    ("no-debugger", Severity::Error, check_no_debugger),
-    ("no-duplicate-case", Severity::Error, check_no_duplicate_case),
-    ("no-self-assign", Severity::Warning, check_no_self_assign),
-    ("no-eval", Severity::Error, check_no_eval),
-    ("no-unreachable", Severity::Error, check_no_unreachable),
-    ("no-constant-condition", Severity::Warning, check_no_constant_condition),
-    ("default-case", Severity::Warning, check_no_missing_default),
-    ("no-fallthrough", Severity::Warning, check_no_fallthrough),
-    ("no-self-compare", Severity::Warning, check_no_self_compare),
-    ("no-useless-catch", Severity::Error, check_no_useless_catch),
-    ("use-isnan", Severity::Error, check_use_isnan),
-    ("no-compare-neg-zero", Severity::Error, check_no_compare_neg_zero),
-    ("no-unsafe-negation", Severity::Error, check_no_unsafe_negation),
-    ("no-constructor-return", Severity::Error, check_no_constructor_return),
-    ("valid-typeof", Severity::Error, check_valid_typeof),
-    ("no-useless-rename", Severity::Warning, check_no_useless_rename),
-    ("no-empty-pattern", Severity::Warning, check_no_empty_pattern),
-];
-
-/// Rules that only apply to Rust files.
-const RUST_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-unsafe", Severity::Warning, rust_rules::check_no_unsafe),
-    ("no-unwrap", Severity::Warning, rust_rules::check_no_unwrap),
-    ("no-dbg", Severity::Warning, rust_rules::check_no_dbg),
-    ("no-todo", Severity::Warning, rust_rules::check_no_todo),
-    ("no-println", Severity::Info, rust_rules::check_no_println),
-    ("needless-bool", Severity::Warning, rust_rules::check_needless_bool),
-    (
-        "no-empty-function",
-        Severity::Warning,
-        rust_rules::check_no_empty_function_rust,
-    ),
-    ("needless-return", Severity::Warning, rust_rules::check_needless_return),
-    ("bool-comparison", Severity::Warning, rust_rules::check_bool_comparison),
-    ("collapsible-if", Severity::Warning, rust_rules::check_collapsible_if),
-    ("single-match", Severity::Warning, rust_rules::check_single_match),
-    ("manual-map", Severity::Warning, rust_rules::check_manual_map),
-    ("redundant-clone", Severity::Warning, rust_rules::check_redundant_clone),
-    ("eq-op", Severity::Warning, rust_rules::check_eq_op),
-];
-
-/// Rules that only apply to Go files.
-const GO_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-panic", Severity::Warning, go_rules::check_no_panic),
-    ("no-fmt-print", Severity::Info, go_rules::check_no_fmt_print),
-    ("no-ignored-error", Severity::Warning, go_rules::check_no_ignored_error),
-    ("no-os-exit", Severity::Warning, go_rules::check_no_os_exit),
-    ("no-defer-in-loop", Severity::Warning, go_rules::check_no_defer_in_loop),
-    ("no-empty-block", Severity::Warning, go_rules::check_no_empty_block),
-    ("no-unreachable", Severity::Error, go_rules::check_no_unreachable_go),
-    ("no-naked-return", Severity::Warning, go_rules::check_no_naked_return),
-    ("no-range-over-string", Severity::Info, go_rules::check_no_range_over_string),
-    ("no-shadow-import", Severity::Warning, go_rules::check_no_shadow_import),
-    ("collapsible-if", Severity::Warning, go_rules::check_collapsible_if_go),
-    ("superfluous-else", Severity::Warning, go_rules::check_superfluous_else_go),
-];
-
-/// Rules that only apply to Python files.
-const PYTHON_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-bare-except", Severity::Warning, check_no_bare_except),
-    ("no-print", Severity::Info, check_no_print),
-    ("no-eval", Severity::Error, check_no_eval_exec),
-    ("no-mutable-default", Severity::Warning, check_no_mutable_default),
-    ("no-global", Severity::Warning, check_no_global),
-    ("no-assert", Severity::Info, check_no_assert),
-    ("unreachable", Severity::Warning, check_unreachable),
-    ("pointless-except", Severity::Warning, check_no_pointless_except),
-    ("no-pass-body", Severity::Info, check_no_pass_body),
-    ("no-star-import", Severity::Warning, check_no_star_import),
-    ("no-nested-with", Severity::Warning, check_no_nested_with),
-    ("no-return-in-init", Severity::Error, check_no_return_in_init),
-    ("simplify-boolean-return", Severity::Warning, check_simplify_boolean_return),
-    ("collapsible-if", Severity::Warning, check_collapsible_if_python),
-    ("superfluous-else", Severity::Warning, check_superfluous_else),
-];
-
-/// Rules that only apply to Java files.
-const JAVA_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-sysout", Severity::Warning, check_no_sysout),
-    ("no-print-stack-trace", Severity::Warning, check_no_print_stack_trace),
-    ("no-empty-catch", Severity::Warning, check_no_empty_catch),
-    ("no-throws-exception", Severity::Warning, check_no_throws_exception),
-    ("no-raw-type", Severity::Warning, check_no_raw_type),
-    ("no-string-equality", Severity::Warning, check_no_string_equality),
-    ("missing-switch-default", Severity::Warning, check_no_missing_switch_default),
-    ("no-empty-if", Severity::Warning, check_no_empty_if_java),
-    ("no-double-brace-init", Severity::Warning, check_no_double_brace_init),
-    ("no-string-concat-in-loop", Severity::Warning, check_no_string_concat_in_loop),
-    ("no-nested-try", Severity::Warning, check_no_nested_try),
-    ("equals-null", Severity::Error, check_equals_null),
-];
-
-/// Rules that apply to C and C++ files.
-const C_CPP_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-printf", Severity::Info, check_no_printf),
-    ("no-unsafe-fn", Severity::Error, check_no_unsafe_fn),
-    ("no-malloc", Severity::Info, check_no_malloc),
-    ("no-goto", Severity::Warning, check_no_goto),
-    ("no-sizeof-ptr", Severity::Warning, check_no_sizeof_ptr),
-    ("no-magic-number", Severity::Info, check_no_magic_number),
-    ("no-implicit-fallthrough", Severity::Warning, check_no_implicit_fallthrough_c),
-    ("no-empty-if", Severity::Warning, check_no_empty_if_c),
-    ("no-void-main", Severity::Warning, check_no_void_main),
-];
-
-/// Rules that only apply to Elixir files.
-const ELIXIR_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-io-inspect", Severity::Warning, check_no_io_inspect),
-    ("no-io-puts", Severity::Info, check_no_io_puts),
-    ("no-raise-in-with", Severity::Warning, check_no_raise_in_with),
-    ("pipe-into-anonymous", Severity::Warning, check_pipe_into_anonymous),
-];
-
-/// Rules that only apply to Erlang files.
-const ERLANG_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-process-flag", Severity::Warning, check_no_process_flag),
-    ("no-catch-all", Severity::Warning, check_no_catch_all),
-    ("no-exit-call", Severity::Warning, check_no_exit_call),
-];
-
-/// Rules that only apply to Gleam files.
-const GLEAM_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-todo", Severity::Warning, gleam_rules::check_no_todo),
-    ("no-panic", Severity::Warning, gleam_rules::check_no_panic),
-    ("no-let-assert", Severity::Warning, gleam_rules::check_no_let_assert),
-];
-
-/// Rules that only apply to Clojure files.
-const CLOJURE_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-println", Severity::Info, clojure_rules::check_no_println),
-    ("no-def-in-def", Severity::Warning, clojure_rules::check_no_def_in_def),
-    ("no-thread-sleep", Severity::Warning, clojure_rules::check_no_thread_sleep),
-    ("no-reflection", Severity::Warning, clojure_rules::check_no_reflection),
-];
-
-/// Rules that only apply to Ruby files.
-const RUBY_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-puts", Severity::Info, ruby_rules::check_no_puts),
-    ("no-eval", Severity::Error, ruby_rules::check_no_eval),
-    ("require-relative", Severity::Warning, ruby_rules::check_require_relative),
-    ("no-rescue-exception", Severity::Warning, ruby_rules::check_no_rescue_exception),
-    ("no-sleep", Severity::Warning, ruby_rules::check_no_sleep),
-];
-
-/// Rules that only apply to PHP files.
-const PHP_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-debug-output", Severity::Warning, php_rules::check_no_debug_output),
-    ("no-eval", Severity::Error, php_rules::check_no_eval),
-    ("no-exit", Severity::Warning, php_rules::check_no_exit),
-    ("strict-comparison", Severity::Warning, php_rules::check_strict_comparison),
-    ("no-error-suppression", Severity::Warning, php_rules::check_no_error_suppression),
-];
-
-/// Rules that only apply to Lua files.
-const LUA_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-global", Severity::Warning, lua_rules::check_no_global),
-    ("no-os-execute", Severity::Error, lua_rules::check_no_os_execute),
-    ("no-loadstring", Severity::Error, lua_rules::check_no_loadstring),
-    ("no-print", Severity::Info, lua_rules::check_no_print),
-];
-
-/// Rules that only apply to Swift files.
-const SWIFT_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-print", Severity::Info, swift_rules::check_no_print),
-    ("no-force-unwrap", Severity::Warning, swift_rules::check_no_force_unwrap),
-    ("no-force-try", Severity::Warning, swift_rules::check_no_force_try),
-    ("no-force-cast", Severity::Warning, swift_rules::check_no_force_cast),
-    ("no-nslog", Severity::Warning, swift_rules::check_no_nslog),
-    ("no-fatal-error", Severity::Warning, swift_rules::check_no_fatal_error),
-];
-
-/// Rules that only apply to Zig files.
-const ZIG_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-debug-print", Severity::Info, zig_rules::check_no_debug_print),
-    ("no-unreachable", Severity::Warning, zig_rules::check_no_unreachable),
-    ("no-panic", Severity::Warning, zig_rules::check_no_panic),
-    ("no-catch-all-switch", Severity::Warning, zig_rules::check_no_catch_all_switch),
-];
-
-/// Rules that only apply to Haskell files.
-const HASKELL_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-partial-function", Severity::Warning, haskell_rules::check_no_partial_functions),
-    ("no-undefined", Severity::Warning, haskell_rules::check_no_undefined),
-    ("no-error", Severity::Warning, haskell_rules::check_no_error),
-    ("no-unsafe-perform-io", Severity::Error, haskell_rules::check_no_unsafe_perform_io),
-    ("no-trace", Severity::Warning, haskell_rules::check_no_trace),
-];
-
-/// Rules that only apply to Scala files.
-const SCALA_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-println", Severity::Info, scala_rules::check_no_println),
-    ("no-null", Severity::Warning, scala_rules::check_no_null),
-    ("no-var", Severity::Warning, scala_rules::check_no_var),
-    ("no-return", Severity::Warning, scala_rules::check_no_return),
-    ("no-as-instance-of", Severity::Warning, scala_rules::check_no_as_instance_of),
-];
-
-/// Rules that only apply to Kotlin files.
-const KOTLIN_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-println", Severity::Info, kotlin_rules::check_no_println),
-    ("no-unsafe-cast", Severity::Warning, kotlin_rules::check_no_unsafe_cast),
-    ("no-not-null-assertion", Severity::Warning, kotlin_rules::check_no_not_null_assertion),
-    ("no-empty-catch", Severity::Warning, kotlin_rules::check_no_empty_catch),
-    ("no-system-exit", Severity::Warning, kotlin_rules::check_no_system_exit),
-    ("prefer-val", Severity::Info, kotlin_rules::check_prefer_val),
-];
-
-/// Rules that only apply to Crystal files.
-const CRYSTAL_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-puts", Severity::Info, crystal_rules::check_no_puts),
-    ("no-raise-string", Severity::Warning, crystal_rules::check_no_raise_string),
-    ("no-rescue-exception", Severity::Warning, crystal_rules::check_no_rescue_exception),
-    ("no-shell", Severity::Error, crystal_rules::check_no_shell),
-    ("no-sleep", Severity::Warning, crystal_rules::check_no_sleep),
-];
-
-/// Rules that only apply to Dart files.
-const DART_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-print", Severity::Info, dart_rules::check_no_print),
-    ("no-dynamic", Severity::Warning, dart_rules::check_no_dynamic),
-    ("no-empty-catch", Severity::Warning, dart_rules::check_no_empty_catch),
-    ("no-cast", Severity::Warning, dart_rules::check_no_cast),
-    ("no-rethrow-only", Severity::Warning, dart_rules::check_no_rethrow_only),
-];
-
-/// Rules that only apply to Elm files.
-const ELM_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-debug", Severity::Warning, elm_rules::check_no_debug),
-    ("no-todo", Severity::Warning, elm_rules::check_no_todo),
-    ("unused-import", Severity::Warning, elm_rules::check_unused_import),
-];
-
-/// Rules that only apply to Groovy files.
-const GROOVY_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-println", Severity::Info, groovy_rules::check_no_println),
-    ("no-def-type", Severity::Warning, groovy_rules::check_no_def_type),
-    ("no-system-exit", Severity::Warning, groovy_rules::check_no_system_exit),
-    ("no-empty-catch", Severity::Warning, groovy_rules::check_no_empty_catch),
-];
-
-/// Rules that only apply to Julia files.
-const JULIA_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("no-println", Severity::Info, julia_rules::check_no_println),
-    ("no-eval", Severity::Error, julia_rules::check_no_eval),
-    ("no-global-mutable", Severity::Warning, julia_rules::check_no_global_mutable),
-    ("no-bare-ccall", Severity::Warning, julia_rules::check_no_bare_ccall),
-];
-
-/// Rules that only apply to Bash files.
-const BASH_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("unquoted-expansion", Severity::Warning, bash_rules::check_unquoted_expansion),
-    ("no-eval", Severity::Error, bash_rules::check_no_eval),
-    ("cd-without-or", Severity::Warning, bash_rules::check_cd_without_or),
-    ("useless-cat", Severity::Warning, bash_rules::check_useless_cat),
-    ("dangerous-rm", Severity::Error, bash_rules::check_dangerous_rm),
-    ("no-set-e", Severity::Info, bash_rules::check_no_set_e),
-    ("test-equals", Severity::Warning, bash_rules::check_test_equals),
-];
-
-/// Rules that apply to all languages with function bodies.
-const UNIVERSAL_RULES: &[(&str, Severity, SimpleCheckFn)] = &[
-    ("todo-comment", Severity::Info, check_todo_comments),
-];
 
 /// Languages that have their own empty-function check via language-specific rules.
 fn has_dedicated_empty_function_rule(lang: SourceLanguage) -> bool {
@@ -365,6 +66,28 @@ impl<'a> LintCtx<'a> {
     }
 }
 
+fn check_unused_imports(ctx: &mut LintCtx, language: SourceLanguage) {
+    if ctx.config.is_rule_disabled("unused-import") {
+        return;
+    }
+    let sev = ctx.config.get_rule_severity("unused-import").unwrap_or(Severity::Warning);
+    if language.is_js_ts() {
+        ctx.issues.extend(unused::check_unused_import_js(ctx.tree, ctx.source_bytes, ctx.file_path, sev));
+    } else if language == SourceLanguage::Python {
+        ctx.issues.extend(unused::check_unused_import_python(ctx.tree, ctx.source_bytes, ctx.file_path, sev));
+    }
+}
+
+fn check_empty_function_universal(ctx: &mut LintCtx, language: SourceLanguage) {
+    if !should_check_empty_function(language) || ctx.config.is_rule_disabled("no-empty-function") {
+        return;
+    }
+    let severity = ctx.config.get_rule_severity("no-empty-function").unwrap_or(Severity::Warning);
+    ctx.issues.extend(check_no_empty_function_universal(
+        ctx.tree, ctx.source_bytes, ctx.file_path, severity,
+    ));
+}
+
 pub fn lint_file(
     file_path: &str,
     source: &str,
@@ -381,61 +104,9 @@ pub fn lint_file(
     };
 
     ctx.run_rules(UNIVERSAL_RULES);
-
-    // Language-specific lint rules
-    match language {
-        _ if language.is_js_ts() => ctx.run_rules(JS_TS_RULES),
-        _ if language.is_rust() => ctx.run_rules(RUST_RULES),
-        SourceLanguage::Go => ctx.run_rules(GO_RULES),
-        SourceLanguage::Python => ctx.run_rules(PYTHON_RULES),
-        SourceLanguage::Java => ctx.run_rules(JAVA_RULES),
-        SourceLanguage::C | SourceLanguage::Cpp => ctx.run_rules(C_CPP_RULES),
-        SourceLanguage::Elixir => ctx.run_rules(ELIXIR_RULES),
-        SourceLanguage::Erlang => ctx.run_rules(ERLANG_RULES),
-        SourceLanguage::Gleam => ctx.run_rules(GLEAM_RULES),
-        SourceLanguage::Clojure => ctx.run_rules(CLOJURE_RULES),
-        SourceLanguage::Ruby => ctx.run_rules(RUBY_RULES),
-        SourceLanguage::Php => ctx.run_rules(PHP_RULES),
-        SourceLanguage::Lua => ctx.run_rules(LUA_RULES),
-        SourceLanguage::Swift => ctx.run_rules(SWIFT_RULES),
-        SourceLanguage::Zig => ctx.run_rules(ZIG_RULES),
-        SourceLanguage::Haskell => ctx.run_rules(HASKELL_RULES),
-        SourceLanguage::Scala => ctx.run_rules(SCALA_RULES),
-        SourceLanguage::Kotlin => ctx.run_rules(KOTLIN_RULES),
-        SourceLanguage::Crystal => ctx.run_rules(CRYSTAL_RULES),
-        SourceLanguage::Dart => ctx.run_rules(DART_RULES),
-        SourceLanguage::Elm => ctx.run_rules(ELM_RULES),
-        SourceLanguage::Groovy => ctx.run_rules(GROOVY_RULES),
-        SourceLanguage::Julia => ctx.run_rules(JULIA_RULES),
-        SourceLanguage::Bash => ctx.run_rules(BASH_RULES),
-        _ => {}
-    }
-
-    // Unused import detection (two-pass, can't use rule array pattern)
-    if !config.is_rule_disabled("unused-import") {
-        let sev = config.get_rule_severity("unused-import").unwrap_or(Severity::Warning);
-        match language {
-            _ if language.is_js_ts() => {
-                ctx.issues.extend(unused::check_unused_import_js(tree, source.as_bytes(), file_path, sev));
-            }
-            SourceLanguage::Python => {
-                ctx.issues.extend(unused::check_unused_import_python(tree, source.as_bytes(), file_path, sev));
-            }
-            _ => {}
-        }
-    }
-
-    // Universal empty-function for languages without a dedicated check
-    if should_check_empty_function(language) && !config.is_rule_disabled("no-empty-function") {
-        let severity = config.get_rule_severity("no-empty-function").unwrap_or(Severity::Warning);
-        ctx.issues.extend(check_no_empty_function_universal(
-            tree,
-            source.as_bytes(),
-            file_path,
-            severity,
-        ));
-    }
-
+    ctx.run_rules(language_rules(language));
+    check_unused_imports(&mut ctx, language);
+    check_empty_function_universal(&mut ctx, language);
     ctx.run_threshold_rules();
 
     ctx.issues

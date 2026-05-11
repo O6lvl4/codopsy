@@ -3,6 +3,17 @@ use tree_sitter::{Node, Tree};
 use crate::analyzer::ast_utils::{is_function_node, node_column, node_line};
 use crate::types::{Issue, Severity};
 
+fn effective_line_count(source: &[u8]) -> usize {
+    let source_str = std::str::from_utf8(source).unwrap_or("");
+    for (i, line) in source_str.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed == "#[cfg(test)]" || trimmed.starts_with("#[cfg(test)]") {
+            return i;
+        }
+    }
+    source.iter().filter(|&&b| b == b'\n').count() + 1
+}
+
 pub fn check_max_lines(
     _tree: &Tree,
     source: &[u8],
@@ -10,7 +21,7 @@ pub fn check_max_lines(
     severity: Severity,
     max: usize,
 ) -> Vec<Issue> {
-    let line_count = source.iter().filter(|&&b| b == b'\n').count() + 1;
+    let line_count = effective_line_count(source);
     if line_count > max {
         vec![Issue {
             file: file_path.to_string(),

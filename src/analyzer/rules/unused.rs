@@ -2,7 +2,6 @@
 //!
 //! Uses two-pass analysis: collect definitions, then scan for references.
 
-use std::collections::HashSet;
 use tree_sitter::{Node, Tree};
 
 use crate::analyzer::ast_utils::node_text;
@@ -41,85 +40,80 @@ pub fn check_unused_import_python(tree: &Tree, source: &[u8], fp: &str, sev: Sev
     issues
 }
 
+fn import_info(node: &Node, source: &[u8]) -> ImportInfo {
+    ImportInfo {
+        name: node_text(node, source).to_string(),
+        line: node.start_position().row + 1,
+        column: node.start_position().column + 1,
+    }
+}
+
+fn import_info_last_segment(node: &Node, source: &[u8]) -> Option<ImportInfo> {
+    let text = node_text(node, source);
+    text.rsplit('.').next().map(|last| ImportInfo {
+        name: last.to_string(),
+        line: node.start_position().row + 1,
+        column: node.start_position().column + 1,
+    })
+}
+
+fn collect_aliased_import(child: &Node, source: &[u8], imports: &mut Vec<ImportInfo>, dotted_to_last: bool) {
+    if let Some(alias) = child.child_by_field_name("alias") {
+        imports.push(import_info(&alias, source));
+    } else if let Some(name) = child.child_by_field_name("name") {
+        if dotted_to_last {
+            if let Some(info) = import_info_last_segment(&name, source) {
+                imports.push(info);
+            }
+        } else {
+            imports.push(import_info(&name, source));
+        }
+    }
+}
+
+fn collect_import_statement(node: &Node, source: &[u8], imports: &mut Vec<ImportInfo>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "dotted_name" => {
+                if let Some(info) = import_info_last_segment(&child, source) {
+                    imports.push(info);
+                }
+            }
+            "aliased_import" => collect_aliased_import(&child, source, imports, true),
+            _ => {}
+        }
+    }
+}
+
+fn collect_import_from_statement(node: &Node, source: &[u8], imports: &mut Vec<ImportInfo>) {
+    let mut cursor = node.walk();
+    let mut past_import = false;
+    for child in node.children(&mut cursor) {
+        if node_text(&child, source) == "import" {
+            past_import = true;
+            continue;
+        }
+        if !past_import {
+            continue;
+        }
+        match child.kind() {
+            "aliased_import" => collect_aliased_import(&child, source, imports, false),
+            "dotted_name" | "identifier" => {
+                let text = node_text(&child, source);
+                if !text.is_empty() && text != "," {
+                    imports.push(import_info(&child, source));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn collect_python_imports(node: &Node, source: &[u8], imports: &mut Vec<ImportInfo>) {
     match node.kind() {
-        "import_statement" => {
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                match child.kind() {
-                    "dotted_name" => {
-                        let text = node_text(&child, source);
-                        if let Some(last) = text.rsplit('.').next() {
-                            imports.push(ImportInfo {
-                                name: last.to_string(),
-                                line: child.start_position().row + 1,
-                                column: child.start_position().column + 1,
-                            });
-                        }
-                    }
-                    "aliased_import" => {
-                        if let Some(alias) = child.child_by_field_name("alias") {
-                            imports.push(ImportInfo {
-                                name: node_text(&alias, source).to_string(),
-                                line: alias.start_position().row + 1,
-                                column: alias.start_position().column + 1,
-                            });
-                        } else if let Some(name) = child.child_by_field_name("name") {
-                            let text = node_text(&name, source);
-                            if let Some(last) = text.rsplit('.').next() {
-                                imports.push(ImportInfo {
-                                    name: last.to_string(),
-                                    line: name.start_position().row + 1,
-                                    column: name.start_position().column + 1,
-                                });
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        "import_from_statement" => {
-            let mut cursor = node.walk();
-            let mut past_import = false;
-            for child in node.children(&mut cursor) {
-                if node_text(&child, source) == "import" {
-                    past_import = true;
-                    continue;
-                }
-                if !past_import {
-                    continue;
-                }
-                match child.kind() {
-                    "aliased_import" => {
-                        if let Some(alias) = child.child_by_field_name("alias") {
-                            imports.push(ImportInfo {
-                                name: node_text(&alias, source).to_string(),
-                                line: alias.start_position().row + 1,
-                                column: alias.start_position().column + 1,
-                            });
-                        } else if let Some(name) = child.child_by_field_name("name") {
-                            imports.push(ImportInfo {
-                                name: node_text(&name, source).to_string(),
-                                line: name.start_position().row + 1,
-                                column: name.start_position().column + 1,
-                            });
-                        }
-                    }
-                    "dotted_name" | "identifier" => {
-                        let text = node_text(&child, source);
-                        if !text.is_empty() && text != "," {
-                            imports.push(ImportInfo {
-                                name: text.to_string(),
-                                line: child.start_position().row + 1,
-                                column: child.start_position().column + 1,
-                            });
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
+        "import_statement" => collect_import_statement(node, source, imports),
+        "import_from_statement" => collect_import_from_statement(node, source, imports),
         _ => {}
     }
     let mut cursor = node.walk();
@@ -201,40 +195,29 @@ fn collect_js_imports(node: &Node, source: &[u8], imports: &mut Vec<ImportInfo>)
     }
 }
 
+fn collect_named_imports(node: &Node, source: &[u8], imports: &mut Vec<ImportInfo>) {
+    let mut inner = node.walk();
+    for spec in node.children(&mut inner) {
+        if spec.kind() != "import_specifier" {
+            continue;
+        }
+        let name_node = spec.child_by_field_name("alias")
+            .or_else(|| spec.child_by_field_name("name"));
+        if let Some(n) = name_node {
+            imports.push(import_info(&n, source));
+        }
+    }
+}
+
 fn collect_js_import_clause(node: &Node, source: &[u8], imports: &mut Vec<ImportInfo>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "identifier" => {
-                imports.push(ImportInfo {
-                    name: node_text(&child, source).to_string(),
-                    line: child.start_position().row + 1,
-                    column: child.start_position().column + 1,
-                });
-            }
-            "named_imports" => {
-                let mut inner = child.walk();
-                for spec in child.children(&mut inner) {
-                    if spec.kind() == "import_specifier" {
-                        let name_node = spec.child_by_field_name("alias")
-                            .or_else(|| spec.child_by_field_name("name"));
-                        if let Some(n) = name_node {
-                            imports.push(ImportInfo {
-                                name: node_text(&n, source).to_string(),
-                                line: n.start_position().row + 1,
-                                column: n.start_position().column + 1,
-                            });
-                        }
-                    }
-                }
-            }
+            "identifier" => imports.push(import_info(&child, source)),
+            "named_imports" => collect_named_imports(&child, source, imports),
             "namespace_import" => {
                 if let Some(alias) = child.child(2) {
-                    imports.push(ImportInfo {
-                        name: node_text(&alias, source).to_string(),
-                        line: alias.start_position().row + 1,
-                        column: alias.start_position().column + 1,
-                    });
+                    imports.push(import_info(&alias, source));
                 }
             }
             _ => {}

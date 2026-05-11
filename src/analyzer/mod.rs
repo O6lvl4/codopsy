@@ -1,7 +1,9 @@
 pub mod ast_utils;
 pub mod complexity;
+pub mod language;
 pub mod linter;
 mod node_classify;
+mod rule_registry;
 pub mod rules;
 
 use crate::config::CodopsyConfig;
