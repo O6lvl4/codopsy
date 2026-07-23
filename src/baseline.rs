@@ -237,6 +237,10 @@ mod tests {
                 average_complexity: 0.0,
                 max_complexity: None,
             },
+            scoring_thresholds: ScoringThresholds {
+                cyclomatic_complexity: Some(10),
+                cognitive_complexity: Some(15),
+            },
             score: Some(ProjectScore {
                 overall: score,
                 grade: to_grade(score),

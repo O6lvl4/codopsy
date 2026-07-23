@@ -46,7 +46,22 @@ pub fn print_summary(result: &AnalysisResult) {
             max.complexity, max.function, max.file
         );
     }
+    eprintln!(
+        "  Scoring thresholds: cyclomatic {}, cognitive {}",
+        format_threshold(result.scoring_thresholds.cyclomatic_complexity),
+        format_threshold(result.scoring_thresholds.cognitive_complexity),
+    );
     eprintln!();
+}
+
+/// The same numbers used to decide `max-complexity` / `max-cognitive-complexity`
+/// issues also drive the Complexity component of the score — this makes that
+/// explicit instead of leaving it to be reverse-engineered from source.
+fn format_threshold(threshold: Option<usize>) -> String {
+    match threshold {
+        Some(t) => format!(">{t}"),
+        None => "disabled".to_string(),
+    }
 }
 
 pub fn print_verbose(analysis: &FileAnalysis) {
@@ -103,6 +118,14 @@ pub fn print_verbose(analysis: &FileAnalysis) {
             max_cc,
             max_cog,
             parts.join(", ")
+        );
+    }
+
+    if let Some(fs) = &analysis.score {
+        let b = &fs.breakdown;
+        eprintln!(
+            "      score {} ({}/100) — complexity {:.0}/35, issues {:.0}/40, structure {:.0}/25",
+            fs.grade, fs.score, b.complexity, b.issues, b.structure
         );
     }
 }

@@ -66,6 +66,19 @@ impl CodopsyConfig {
         }
         None
     }
+
+    /// Resolve the effective threshold for a `max`-style rule: the config's
+    /// override if present, else `default_max`, or `None` if the rule is
+    /// disabled entirely. This is the single source of truth both for
+    /// deciding when to emit a `rule` issue and for computing its
+    /// contribution to `score_complexity` — the two must never diverge, or a
+    /// relaxed config threshold silently keeps penalizing the score.
+    pub fn resolve_threshold(&self, name: &str, default_max: usize) -> Option<usize> {
+        if self.is_rule_disabled(name) {
+            return None;
+        }
+        Some(self.get_rule_max(name).unwrap_or(default_max))
+    }
 }
 
 const CONFIG_FILENAME: &str = ".codopsyrc.json";
@@ -162,5 +175,25 @@ mod tests {
         assert!(config.get_rule_severity("nonexistent").is_none());
         assert!(config.get_rule_max("nonexistent").is_none());
         assert!(!config.is_rule_disabled("nonexistent"));
+    }
+
+    #[test]
+    fn resolve_threshold_falls_back_to_default() {
+        let config = CodopsyConfig::default();
+        assert_eq!(config.resolve_threshold("max-complexity", 10), Some(10));
+    }
+
+    #[test]
+    fn resolve_threshold_uses_configured_max() {
+        let json = r#"{ "rules": { "max-complexity": { "max": 20 } } }"#;
+        let config: CodopsyConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.resolve_threshold("max-complexity", 10), Some(20));
+    }
+
+    #[test]
+    fn resolve_threshold_none_when_disabled() {
+        let json = r#"{ "rules": { "max-complexity": false } }"#;
+        let config: CodopsyConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.resolve_threshold("max-complexity", 10), None);
     }
 }

@@ -77,13 +77,35 @@ codopsy init
 
 ## Quality Score
 
-Projects are graded A–F based on three components:
+Each file is scored 0–100 from three components, summed and rounded:
 
 | Component | Weight | What it measures |
 |-----------|--------|-----------------|
-| Complexity | 35% | Average & max cyclomatic complexity |
-| Issues | 40% | Lint violations per file |
-| Structure | 25% | File count & function distribution |
+| Complexity | 35 | Per-function penalty for exceeding the cyclomatic/cognitive complexity thresholds |
+| Issues | 40 | Lint violations, grouped by rule, weighted by severity |
+| Structure | 25 | `max-lines` / `max-depth` / `max-params` violations |
+
+The project score is a `sqrt(function_count + 1)`-weighted average of file
+scores (files with more functions carry more weight), minus a small penalty
+for the total number of issues scattered across the project.
+
+**The Complexity component uses the *same* `max-complexity` /
+`max-cognitive-complexity` thresholds — whether from `.codopsyrc.json` or the
+`--max-complexity`/`--max-cognitive-complexity` flags — that decide whether a
+warning is emitted for a function.** There is no separate, hidden threshold:
+if you configure `max-complexity: 20`, a function at complexity 15 costs
+nothing in either the issue list or the score. Each function's excess over
+the threshold is penalized per unit (capped per function, so one outlier
+can't dominate a file's score), and a file's Complexity component floors at 0
+once the sum of its functions' excess crosses the 35-point budget — further
+increases in complexity beyond that point don't cost additional points, but
+they also don't recover any until the file's total excess drops back under
+the budget. Disabling a rule (`"max-complexity": false`) removes it from the
+score entirely, not just from the issue list.
+
+Run with `-v`/`--verbose` to see the score breakdown per file, and the
+`scoringThresholds` field in JSON output records exactly what was used for a
+given run.
 
 | Grade | Score |
 |-------|-------|

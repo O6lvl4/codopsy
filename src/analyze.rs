@@ -6,7 +6,9 @@ use rayon::prelude::*;
 use crate::analyzer::analyze_file;
 use crate::config::CodopsyConfig;
 use crate::scorer::{calculate_file_score, calculate_project_score};
-use crate::types::{AnalysisResult, FileAnalysis, MaxComplexityInfo, Severity, Summary};
+use crate::types::{
+    AnalysisResult, FileAnalysis, MaxComplexityInfo, ScoringThresholds, Severity, Summary,
+};
 
 pub struct AnalyzeOptions {
     pub max_complexity: usize,
@@ -22,18 +24,21 @@ impl Default for AnalyzeOptions {
     }
 }
 
-fn check_max_complexity(
-    analysis: &mut FileAnalysis,
-    config: &CodopsyConfig,
-    default_max: usize,
-) {
-    if config.is_rule_disabled("max-complexity") {
-        return;
+/// Resolve the thresholds that will govern BOTH the `max-complexity` /
+/// `max-cognitive-complexity` issue rules AND the `score_complexity`
+/// component, from the same config + CLI-flag inputs. Keeping this as one
+/// function is what guarantees the score can never silently diverge from a
+/// project's configured tolerance again.
+pub fn resolve_scoring_thresholds(config: &CodopsyConfig, opts: &AnalyzeOptions) -> ScoringThresholds {
+    ScoringThresholds {
+        cyclomatic_complexity: config.resolve_threshold("max-complexity", opts.max_complexity),
+        cognitive_complexity: config
+            .resolve_threshold("max-cognitive-complexity", opts.max_cognitive_complexity),
     }
+}
 
-    let threshold = config
-        .get_rule_max("max-complexity")
-        .unwrap_or(default_max);
+fn check_max_complexity(analysis: &mut FileAnalysis, config: &CodopsyConfig, threshold: Option<usize>) {
+    let Some(threshold) = threshold else { return };
     let severity = config
         .get_rule_severity("max-complexity")
         .unwrap_or(Severity::Warning);
@@ -59,15 +64,9 @@ fn check_max_complexity(
 fn check_max_cognitive_complexity(
     analysis: &mut FileAnalysis,
     config: &CodopsyConfig,
-    default_max: usize,
+    threshold: Option<usize>,
 ) {
-    if config.is_rule_disabled("max-cognitive-complexity") {
-        return;
-    }
-
-    let threshold = config
-        .get_rule_max("max-cognitive-complexity")
-        .unwrap_or(default_max);
+    let Some(threshold) = threshold else { return };
     let severity = config
         .get_rule_severity("max-cognitive-complexity")
         .unwrap_or(Severity::Warning);
@@ -95,16 +94,13 @@ pub fn analyze_files(
     config: &CodopsyConfig,
     opts: &AnalyzeOptions,
 ) -> Vec<FileAnalysis> {
+    let thresholds = resolve_scoring_thresholds(config, opts);
     files
         .par_iter()
         .map(|file_path| {
             let mut analysis = analyze_file(file_path, config);
-            check_max_complexity(&mut analysis, config, opts.max_complexity);
-            check_max_cognitive_complexity(
-                &mut analysis,
-                config,
-                opts.max_cognitive_complexity,
-            );
+            check_max_complexity(&mut analysis, config, thresholds.cyclomatic_complexity);
+            check_max_cognitive_complexity(&mut analysis, config, thresholds.cognitive_complexity);
             analysis
         })
         .collect()
@@ -114,6 +110,7 @@ pub fn build_analysis_result(
     mut file_analyses: Vec<FileAnalysis>,
     files: &[String],
     target_dir: &str,
+    thresholds: ScoringThresholds,
 ) -> AnalysisResult {
     let all_issues_count: usize = file_analyses.iter().map(|f| f.issues.len()).sum();
 
@@ -155,13 +152,10 @@ pub fn build_analysis_result(
         })
         .max_by_key(|m| m.complexity);
 
-    // Attach per-file scores
+    // Attach per-file scores, using the SAME thresholds the issue rules above
+    // were evaluated against — see `resolve_scoring_thresholds`.
     for fa in &mut file_analyses {
-        let fs = calculate_file_score(fa);
-        fa.score = Some(crate::types::FileScore {
-            score: fs.score,
-            grade: fs.grade,
-        });
+        fa.score = Some(calculate_file_score(fa, thresholds));
     }
 
     let mut result = AnalysisResult {
@@ -175,6 +169,7 @@ pub fn build_analysis_result(
             average_complexity: avg_complexity,
             max_complexity,
         },
+        scoring_thresholds: thresholds,
         score: None,
     };
 
@@ -190,6 +185,7 @@ pub fn analyze(
     config: &CodopsyConfig,
     opts: &AnalyzeOptions,
 ) -> AnalysisResult {
+    let thresholds = resolve_scoring_thresholds(config, opts);
     let file_analyses = analyze_files(files, config, opts);
-    build_analysis_result(file_analyses, files, &target_dir.to_string_lossy())
+    build_analysis_result(file_analyses, files, &target_dir.to_string_lossy(), thresholds)
 }

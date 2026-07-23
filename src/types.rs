@@ -130,10 +130,36 @@ pub struct ComplexityResult {
     pub functions: Vec<FunctionComplexity>,
 }
 
+/// The per-function complexity thresholds actually used to compute
+/// `score_complexity`. Mirrors whatever governs the `max-complexity` /
+/// `max-cognitive-complexity` issue rules (CLI flag or `.codopsyrc.json`),
+/// so the score and the visible issues are always driven by the same numbers.
+/// `None` means the corresponding rule is disabled: that dimension never
+/// penalizes the score.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoringThresholds {
+    pub cyclomatic_complexity: Option<usize>,
+    pub cognitive_complexity: Option<usize>,
+}
+
+/// Raw points (before rounding) contributed by each of the three scoring
+/// components, out of their respective weights (complexity: 35, issues: 40,
+/// structure: 25). Exposed so a degraded score is explainable without
+/// reverse-engineering the formula.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoreBreakdown {
+    pub complexity: f64,
+    pub issues: f64,
+    pub structure: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileScore {
     pub score: i32,
     pub grade: Grade,
+    pub breakdown: ScoreBreakdown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,6 +203,15 @@ pub struct AnalysisResult {
     pub target_dir: String,
     pub files: Vec<FileAnalysis>,
     pub summary: Summary,
+    #[serde(default = "default_scoring_thresholds")]
+    pub scoring_thresholds: ScoringThresholds,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<ProjectScore>,
+}
+
+fn default_scoring_thresholds() -> ScoringThresholds {
+    ScoringThresholds {
+        cyclomatic_complexity: Some(crate::defaults::MAX_COMPLEXITY),
+        cognitive_complexity: Some(crate::defaults::MAX_COGNITIVE_COMPLEXITY),
+    }
 }

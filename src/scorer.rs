@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use crate::defaults;
 use crate::types::{
-    to_grade, AnalysisResult, FileAnalysis, FileScore, Grade, ProjectScore, Severity,
+    to_grade, AnalysisResult, FileAnalysis, FileScore, Grade, ProjectScore, ScoreBreakdown,
+    ScoringThresholds, Severity,
 };
 
 /// Rules excluded from the "issues" scoring component
@@ -20,15 +21,22 @@ fn clamp_min_0(value: f64) -> f64 {
 }
 
 /// Complexity component (max weight: WEIGHT_COMPLEXITY = 35).
-/// Penalizes functions that exceed CC/cognitive thresholds.
+/// Penalizes functions that exceed the CC/cognitive thresholds — the SAME
+/// thresholds that govern whether `max-complexity` / `max-cognitive-complexity`
+/// issues are emitted (see `analyze::resolve_scoring_thresholds`). A rule with
+/// no threshold (disabled) never penalizes that dimension.
 /// Penalty per function is capped to prevent a single outlier from dominating.
-fn score_complexity(analysis: &FileAnalysis) -> f64 {
+fn score_complexity(analysis: &FileAnalysis, thresholds: ScoringThresholds) -> f64 {
     let mut penalty = 0.0;
     for func in &analysis.complexity.functions {
-        let cc_excess = (func.complexity as f64 - defaults::CC_THRESHOLD).max(0.0);
-        let cog_excess = (func.cognitive_complexity as f64 - defaults::COG_THRESHOLD).max(0.0);
-        penalty += (cc_excess * defaults::CC_PENALTY_RATE).min(defaults::CC_PENALTY_CAP);
-        penalty += (cog_excess * defaults::COG_PENALTY_RATE).min(defaults::COG_PENALTY_CAP);
+        if let Some(cc_threshold) = thresholds.cyclomatic_complexity {
+            let cc_excess = (func.complexity as f64 - cc_threshold as f64).max(0.0);
+            penalty += (cc_excess * defaults::CC_PENALTY_RATE).min(defaults::CC_PENALTY_CAP);
+        }
+        if let Some(cog_threshold) = thresholds.cognitive_complexity {
+            let cog_excess = (func.cognitive_complexity as f64 - cog_threshold as f64).max(0.0);
+            penalty += (cog_excess * defaults::COG_PENALTY_RATE).min(defaults::COG_PENALTY_CAP);
+        }
     }
     clamp_min_0(defaults::WEIGHT_COMPLEXITY - penalty)
 }
@@ -80,15 +88,26 @@ fn score_structure(analysis: &FileAnalysis) -> f64 {
     clamp_min_0(score)
 }
 
-pub fn calculate_file_score(analysis: &FileAnalysis) -> FileScore {
-    let raw = score_complexity(analysis) + score_issues(analysis) + score_structure(analysis);
-    let score = raw.round() as i32;
+pub fn calculate_file_score(analysis: &FileAnalysis, thresholds: ScoringThresholds) -> FileScore {
+    let complexity = score_complexity(analysis, thresholds);
+    let issues = score_issues(analysis);
+    let structure = score_structure(analysis);
+    let score = (complexity + issues + structure).round() as i32;
     FileScore {
         score,
         grade: to_grade(score),
+        breakdown: ScoreBreakdown {
+            complexity,
+            issues,
+            structure,
+        },
     }
 }
 
+/// Aggregates the project score from each file's ALREADY-COMPUTED `score`
+/// (set by `analyze::build_analysis_result` before this runs) rather than
+/// recomputing it, so there is exactly one place — `calculate_file_score` —
+/// that turns thresholds + analysis into a score.
 pub fn calculate_project_score(result: &AnalysisResult) -> ProjectScore {
     if result.files.is_empty() {
         let mut distribution = HashMap::new();
@@ -102,23 +121,22 @@ pub fn calculate_project_score(result: &AnalysisResult) -> ProjectScore {
         };
     }
 
-    let file_scores: Vec<FileScore> = result.files.iter().map(|f| calculate_file_score(f)).collect();
-
     let mut distribution: HashMap<String, usize> = HashMap::new();
     for g in ["A", "B", "C", "D", "F"] {
         distribution.insert(g.to_string(), 0);
-    }
-    for fs in &file_scores {
-        *distribution.entry(fs.grade.to_string()).or_default() += 1;
     }
 
     // Weighted average: files with more functions carry more weight (sqrt scaling).
     let mut weighted_sum = 0.0;
     let mut total_weight = 0.0;
-    for (i, file) in result.files.iter().enumerate() {
+    for file in &result.files {
+        let Some(fs) = &file.score else {
+            continue;
+        };
+        *distribution.entry(fs.grade.to_string()).or_default() += 1;
         let func_count = file.complexity.functions.len() as f64;
         let weight = (func_count + 1.0).sqrt();
-        weighted_sum += file_scores[i].score as f64 * weight;
+        weighted_sum += fs.score as f64 * weight;
         total_weight += weight;
     }
 
@@ -172,6 +190,15 @@ mod tests {
         }
     }
 
+    /// The historical hardcoded thresholds (10/15), for tests that don't
+    /// care about threshold configuration itself.
+    fn default_thresholds() -> ScoringThresholds {
+        ScoringThresholds {
+            cyclomatic_complexity: Some(10),
+            cognitive_complexity: Some(15),
+        }
+    }
+
     #[test]
     fn perfect_score_for_clean_file() {
         let analysis = make_analysis(
@@ -183,7 +210,7 @@ mod tests {
             }],
             vec![],
         );
-        let score = calculate_file_score(&analysis);
+        let score = calculate_file_score(&analysis, default_thresholds());
         assert_eq!(score.score, 100);
         assert_eq!(score.grade, Grade::A);
     }
@@ -199,7 +226,7 @@ mod tests {
             }],
             vec![],
         );
-        let score = calculate_file_score(&analysis);
+        let score = calculate_file_score(&analysis, default_thresholds());
         assert!(score.score < 80, "Score should be reduced: {}", score.score);
     }
 
@@ -208,9 +235,77 @@ mod tests {
         let error_analysis = make_analysis(vec![], vec![make_issue("no-eval", Severity::Error)]);
         let warning_analysis = make_analysis(vec![], vec![make_issue("no-var", Severity::Warning)]);
 
-        let error_score = calculate_file_score(&error_analysis);
-        let warning_score = calculate_file_score(&warning_analysis);
+        let error_score = calculate_file_score(&error_analysis, default_thresholds());
+        let warning_score = calculate_file_score(&warning_analysis, default_thresholds());
         assert!(error_score.score < warning_score.score);
+    }
+
+    #[test]
+    fn score_breakdown_sums_to_score() {
+        let analysis = make_analysis(
+            vec![FunctionComplexity {
+                name: "complex".to_string(),
+                line: 1,
+                complexity: 25,
+                cognitive_complexity: 30,
+            }],
+            vec![make_issue("no-var", Severity::Warning)],
+        );
+        let fs = calculate_file_score(&analysis, default_thresholds());
+        let sum = fs.breakdown.complexity + fs.breakdown.issues + fs.breakdown.structure;
+        assert_eq!(sum.round() as i32, fs.score);
+    }
+
+    /// The bug this whole module exists to prevent: relaxing the configured
+    /// complexity threshold (e.g. `.codopsyrc.json`'s `max-complexity.max`)
+    /// MUST move `score_complexity` too — it must never keep silently
+    /// penalizing at the old, tighter default once the project has opted
+    /// into a looser bar.
+    #[test]
+    fn relaxed_threshold_improves_complexity_score() {
+        let analysis = make_analysis(
+            vec![FunctionComplexity {
+                name: "mid".to_string(),
+                line: 1,
+                complexity: 18,
+                cognitive_complexity: 25,
+            }],
+            vec![],
+        );
+        let strict = score_complexity(&analysis, default_thresholds());
+        let relaxed = score_complexity(
+            &analysis,
+            ScoringThresholds {
+                cyclomatic_complexity: Some(20),
+                cognitive_complexity: Some(30),
+            },
+        );
+        assert!(
+            relaxed > strict,
+            "relaxed threshold should score higher: strict={strict} relaxed={relaxed}"
+        );
+        assert_eq!(relaxed, defaults::WEIGHT_COMPLEXITY, "under the relaxed threshold this function has no excess at all");
+    }
+
+    #[test]
+    fn disabled_complexity_rule_never_penalizes() {
+        let analysis = make_analysis(
+            vec![FunctionComplexity {
+                name: "huge".to_string(),
+                line: 1,
+                complexity: 500,
+                cognitive_complexity: 500,
+            }],
+            vec![],
+        );
+        let score = score_complexity(
+            &analysis,
+            ScoringThresholds {
+                cyclomatic_complexity: None,
+                cognitive_complexity: None,
+            },
+        );
+        assert_eq!(score, defaults::WEIGHT_COMPLEXITY);
     }
 
     #[test]
@@ -237,6 +332,7 @@ mod tests {
                 average_complexity: 0.0,
                 max_complexity: None,
             },
+            scoring_thresholds: default_thresholds(),
             score: None,
         };
         let project_score = calculate_project_score(&result);
