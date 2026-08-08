@@ -1,3 +1,5 @@
 /target
 codopsy-report.*
 .codopsy-baseline.json
+/sample
+/sample.beam
