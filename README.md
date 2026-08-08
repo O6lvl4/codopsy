@@ -1,4 +1,6 @@
-# codopsy
+<p align="center">
+  <img src="assets/banner.png" alt="codopsy — static code analysis" width="760">
+</p>
 
 AST-level code quality analyzer for 35 languages with 182 lint rules. Uses [tree-sitter](https://tree-sitter.github.io/) to parse source code into ASTs and analyzes complexity, lint issues, and structural quality — without executing code.
 
@@ -43,6 +45,27 @@ AST-level code quality analyzer for 35 languages with 182 lint rules. Uses [tree
 **universal** = todo-comment + no-empty-function + syntax-error + threshold rules.
 
 ## Install
+
+Homebrew (macOS and Linux):
+
+```bash
+brew install o6lvl4/tap/codopsy
+```
+
+Prebuilt binary — no toolchain required:
+
+```bash
+# macOS (Apple Silicon)
+curl -sSfL https://github.com/O6lvl4/codopsy/releases/latest/download/codopsy-aarch64-apple-darwin.tar.gz | tar xz
+# macOS (Intel)
+curl -sSfL https://github.com/O6lvl4/codopsy/releases/latest/download/codopsy-x86_64-apple-darwin.tar.gz | tar xz
+# Linux (x86_64)
+curl -sSfL https://github.com/O6lvl4/codopsy/releases/latest/download/codopsy-x86_64-unknown-linux-gnu.tar.gz | tar xz
+
+sudo mv codopsy /usr/local/bin/
+```
+
+From source (Rust 1.80+; builds 35 tree-sitter grammars, so expect a few minutes):
 
 ```bash
 cargo install --git https://github.com/O6lvl4/codopsy.git
@@ -391,6 +414,28 @@ Each has 3–5 dedicated rules targeting debug output, unsafe patterns, and lang
 4. **Report**: JSON output with per-file and per-function details
 
 All analysis is static — no code execution required. Files are analyzed in parallel via [rayon](https://github.com/rayon-rs/rayon).
+
+## Development
+
+```bash
+cargo test              # unit tests + language E2E fixtures
+codopsy analyze ./src   # codopsy scores itself; CI requires this to stay clean
+```
+
+Two suites shell out to each language's real toolchain — `e2e_syntax` checks that
+the "clean" fixtures actually compile, and `e2e_compare` diffs codopsy's findings
+against the native linters. Both skip themselves when a toolchain is missing, so
+`cargo test` passes without them. To run them for real, install the versions
+pinned in `qusp.toml`:
+
+```bash
+qusp install
+cargo test --test e2e_syntax --test e2e_compare
+```
+
+Adding a language means one row in `LANGUAGES` (`src/analyzer/language.rs`), a
+rule table in `src/analyzer/rule_tables.rs`, and a fixture under
+`tests/fixtures/` whose `expect:` comment lists the rules it should trigger.
 
 ## License
 
