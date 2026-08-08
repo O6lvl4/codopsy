@@ -11,11 +11,29 @@
     "no-self-assign": "warning",
     "no-eval": "error",
     "no-unreachable": "error",
-    "max-lines": { "severity": "warning", "max": 300 },
-    "max-depth": { "severity": "warning", "max": 5 },
-    "max-params": { "severity": "warning", "max": 5 },
-    "max-complexity": { "severity": "warning", "max": 20 },
-    "max-cognitive-complexity": { "severity": "warning", "max": 20 },
+    "max-lines": {
+      "severity": "warning",
+      "max": 300
+    },
+    "max-depth": {
+      "severity": "warning",
+      "max": 5
+    },
+    "max-params": {
+      "severity": "warning",
+      "max": 5
+    },
+    "max-complexity": {
+      "severity": "warning",
+      "max": 20
+    },
+    "max-cognitive-complexity": {
+      "severity": "warning",
+      "max": 20
+    },
     "no-println": false
-  }
+  },
+  "skipDirs": [
+    "/tests/fixtures/"
+  ]
 }
