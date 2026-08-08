@@ -1,6 +1,6 @@
 # codopsy
 
-AST-level code quality analyzer for 34 languages with 174 lint rules. Uses [tree-sitter](https://tree-sitter.github.io/) to parse source code into ASTs and analyzes complexity, lint issues, and structural quality — without executing code.
+AST-level code quality analyzer for 35 languages with 182 lint rules. Uses [tree-sitter](https://tree-sitter.github.io/) to parse source code into ASTs and analyzes complexity, lint issues, and structural quality — without executing code.
 
 ## Supported Languages
 
@@ -13,6 +13,7 @@ AST-level code quality analyzer for 34 languages with 174 lint rules. Uses [tree
 | Go | `.go` | 14 rules | CC + Cognitive |
 | Java | `.java` | 12 rules | CC + Cognitive |
 | C/C++ | `.c` `.h` `.cpp` `.cc` `.cxx` `.hpp` `.hxx` | 9 rules | CC + Cognitive |
+| Lean 4 | `.lean` | 8 rules | CC + Cognitive |
 | Bash | `.sh` `.bash` `.zsh` | 7 rules | CC + Cognitive |
 | Kotlin | `.kt` `.kts` | 6 rules | CC + Cognitive |
 | Swift | `.swift` | 6 rules | CC + Cognitive |
@@ -39,7 +40,7 @@ AST-level code quality analyzer for 34 languages with 174 lint rules. Uses [tree
 | JSON | `.json` | threshold | structure |
 | YAML | `.yml` `.yaml` | threshold | structure |
 
-**universal** = todo-comment + no-empty-function + threshold rules.
+**universal** = todo-comment + no-empty-function + syntax-error + threshold rules.
 
 ## Install
 
@@ -254,6 +255,24 @@ Config is searched upward from the target directory to the home directory.
 | `no-empty-if` | warning | Detect empty if blocks |
 | `no-void-main` | warning | Use `int main()` not `void main()` |
 
+### Lean 4 Rules (8)
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `no-sorry` | error | `sorry` leaves a declaration unproved |
+| `no-axiom` | warning | `axiom` adds an unproved assumption |
+| `no-native-decide` | warning | `native_decide` trusts the compiler, not just the kernel |
+| `no-unsafe` | warning | `unsafe` bypasses soundness guarantees |
+| `no-unlimited-heartbeats` | warning | `set_option maxHeartbeats 0` removes the elaboration timeout |
+| `no-partial-def` | info | `partial` skips the termination checker |
+| `no-dbg-trace` | info | `dbg_trace` is leftover debug output |
+| `no-debug-command` | info | `#eval` / `#check` / `#print` / `#reduce` left in the file |
+
+Lean is macro-extensible, so no tree-sitter grammar can cover every file. codopsy
+parses what it can and reports the rest via the universal `syntax-error` rule
+instead of silently scoring an unread file as clean. Hand-written Lean parses
+essentially in full; the deepest metaprogramming in `lean4`/`Mathlib` core does not.
+
 ### Elixir Rules (4)
 
 | Rule | Default | Description |
@@ -352,6 +371,7 @@ Each has 3–5 dedicated rules targeting debug output, unsafe patterns, and lang
 |------|---------|-------------|
 | `todo-comment` | info | Detect TODO/FIXME/HACK/XXX comments |
 | `no-empty-function` | warning | Detect empty function bodies |
+| `syntax-error` | info | Source the parser could not read (results for that file are incomplete) |
 
 ### Threshold Rules (all languages)
 

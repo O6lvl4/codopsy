@@ -16,6 +16,7 @@ pub mod haskell_rules;
 pub mod java_rules;
 pub mod julia_rules;
 pub mod kotlin_rules;
+pub mod lean_rules;
 pub mod lua_rules;
 pub mod php_rules;
 pub mod python_flow_rules;

@@ -1,5 +1,5 @@
 class Codopsy < Formula
-  desc "AST-level code quality analyzer for 34 languages"
+  desc "AST-level code quality analyzer for 35 languages"
   homepage "https://github.com/O6lvl4/codopsy"
   license "MIT"
 

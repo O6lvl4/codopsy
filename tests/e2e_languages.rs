@@ -16,6 +16,8 @@ fn parse_expected_rules(source: &str) -> HashSet<String> {
         // Match both // and # comment styles
         let after = if let Some(rest) = trimmed.strip_prefix("//") {
             rest.trim()
+        } else if let Some(rest) = trimmed.strip_prefix("--") {
+            rest.trim()
         } else if let Some(rest) = trimmed.strip_prefix('#') {
             rest.trim()
         } else if let Some(rest) = trimmed.strip_prefix(';') {
@@ -68,6 +70,20 @@ fn run_fixture(filename: &str) {
     );
 }
 
+/// Assert a fixture produces no lint issues at all (threshold rules aside).
+fn run_clean_fixture(filename: &str) {
+    let path = fixture_path(filename);
+    let config = CodopsyConfig::default();
+    let analysis = analyze_file(&path, &config);
+    let fired: Vec<&String> = analysis
+        .issues
+        .iter()
+        .filter(|i| !i.rule.starts_with("max-"))
+        .map(|i| &i.rule)
+        .collect();
+    assert!(fired.is_empty(), "Fixture {filename}: unexpected issues {fired:?}");
+}
+
 #[test]
 fn e2e_javascript() {
     run_fixture("js_violations.js");
@@ -118,12 +134,24 @@ fn e2e_gleam() {
     run_fixture("gleam_violations.gleam");
 }
 
+#[test]
+fn e2e_lean() {
+    run_fixture("lean_violations.lean");
+}
+
+/// A Lean file the grammar reads end to end must not be reported as unparsed —
+/// otherwise `syntax-error` would be noise on every Lean project.
+#[test]
+fn e2e_lean_clean_file_parses() {
+    run_clean_fixture("lean_clean.lean");
+}
+
 /// Verify that a clean file produces no issues (except threshold rules).
 #[test]
 fn e2e_clean_file_no_violations() {
     let source = "function add(a, b) { return a + b; }\n";
     let tmp = std::env::temp_dir().join("codopsy_e2e_clean.js");
-    std::fs::write(&tmp, source).unwrap();
+    std::fs::write(&tmp, source).expect("write temp fixture");
 
     let config = CodopsyConfig::default();
     let analysis = analyze_file(&tmp.to_string_lossy(), &config);

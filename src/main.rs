@@ -16,7 +16,7 @@ use codopsy::utils::file::find_source_files_with_config;
 use codopsy::utils::git::{get_changed_files, is_git_repository};
 
 #[derive(Parser)]
-#[command(name = "codopsy", version, about = "AST-level code quality analyzer for TypeScript, JavaScript & Rust")]
+#[command(name = "codopsy", version, about = "AST-level code quality analyzer for 35 languages")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -52,11 +52,11 @@ struct AnalyzeArgs {
     format: String,
 
     /// Complexity threshold for warnings
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value_t = codopsy::defaults::MAX_COMPLEXITY)]
     max_complexity: usize,
 
     /// Cognitive complexity threshold for warnings
-    #[arg(long, default_value = "15")]
+    #[arg(long, default_value_t = codopsy::defaults::MAX_COGNITIVE_COMPLEXITY)]
     max_cognitive_complexity: usize,
 
     /// Exit with code 1 if warnings are found

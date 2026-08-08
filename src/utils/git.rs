@@ -1,6 +1,25 @@
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// Absolute path of the repository root containing `dir`.
+///
+/// Every path `git` reports (`git log --name-only`, `git diff --name-only`) is
+/// relative to this, not to the directory the command ran in.
+pub fn repo_root(dir: &Path) -> Option<PathBuf> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(dir)
+        .output()
+        .map_err(|e| eprintln!("Warning: git rev-parse failed: {e}"))
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(PathBuf::from(
+        String::from_utf8_lossy(&output.stdout).trim(),
+    ))
+}
 
 pub fn is_git_repository(dir: &Path) -> bool {
     Command::new("git")
@@ -43,26 +62,11 @@ pub fn get_changed_files(dir: &Path, base: &str) -> Vec<String> {
         .map_err(|e| eprintln!("Warning: git diff failed: {e}"))
         .ok();
 
-    let repo_root = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .current_dir(dir)
-        .output()
-        .map_err(|e| eprintln!("Warning: git rev-parse failed: {e}"))
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        });
-
-    let (output, repo_root) = match (output, repo_root) {
+    let (output, root) = match (output, repo_root(dir)) {
         (Some(o), Some(r)) if o.status.success() => (o, r),
         _ => return vec![],
     };
 
-    let root = Path::new(&repo_root);
     String::from_utf8_lossy(&output.stdout)
         .lines()
         .map(|l| l.trim())

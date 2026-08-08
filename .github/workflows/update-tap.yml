@@ -41,7 +41,7 @@ jobs:
 
           cat > tap/Formula/codopsy.rb << FORMULA
           class Codopsy < Formula
-            desc "AST-level code quality analyzer for 34 languages with 174 lint rules"
+            desc "AST-level code quality analyzer for 35 languages with 182 lint rules"
             homepage "https://github.com/O6lvl4/codopsy"
             version "${VERSION}"
             license "MIT"

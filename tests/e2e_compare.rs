@@ -66,17 +66,7 @@ fn try_qusp(args: &[&str]) -> Option<String> {
     try_run("qusp", &full)
 }
 
-/// Try multiple commands in order, return the first that succeeds.
-fn try_any(attempts: &[(&str, &[&str])]) -> (Option<String>, &'static str) {
-    for &(name, args_slice) in attempts {
-        // Split the first element as command, rest as args
-        // Actually we receive (label, full_args_to_try_run)
-        // Let's restructure
-    }
-    (None, "none")
-}
-
-fn print_report(lang: &str, file: &str, codopsy_issues: &BTreeSet<String>, native: Option<&str>, native_name: &str) {
+fn print_report(lang: &str, codopsy_issues: &BTreeSet<String>, native: Option<&str>, native_name: &str) {
     let native_count = native.map(|o| {
         o.lines().filter(|l| !l.trim().is_empty()).count()
     }).unwrap_or(0);
@@ -112,7 +102,7 @@ fn compare(lang: &str, file: &str, native_name: &str, native_fn: impl FnOnce(&st
     let codopsy = run_codopsy(&path);
     let path_str = path.to_string_lossy().to_string();
     let native = native_fn(&path_str);
-    print_report(lang, file, &codopsy, native.as_deref(), native_name);
+    print_report(lang, &codopsy, native.as_deref(), native_name);
 }
 
 // ─── Languages with dedicated codopsy rules ──────────────────────────

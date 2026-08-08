@@ -1,8 +1,7 @@
 use tree_sitter::{Node, Tree};
 
-use crate::analyzer::ast_utils::{
-    is_clojure_defn, is_elixir_def_call, is_erlang_fun_decl, is_function_node, node_text,
-};
+use crate::analyzer::ast_utils::{is_function_node, node_column, node_line, node_text};
+use crate::analyzer::decl::{is_clojure_defn, is_elixir_def_call, is_erlang_fun_decl};
 use crate::types::{Issue, Severity};
 
 use super::run_check;
@@ -104,6 +103,7 @@ pub fn check_todo_comments(
         if !matches!(
             kind,
             "comment" | "line_comment" | "block_comment" | "hash_comment"
+                | "doc_comment" | "module_doc_comment"
         ) {
             return;
         }
@@ -119,6 +119,64 @@ pub fn check_todo_comments(
             }
         }
     })
+}
+
+/// Report source the parser could not make sense of.
+///
+/// Without this, a file the grammar cannot read produces no functions and no
+/// issues — and therefore a perfect score. One issue is emitted per file, since
+/// a single unsupported construct typically shreds everything after it.
+pub fn check_syntax_errors(
+    tree: &Tree,
+    source: &[u8],
+    fp: &str,
+    sev: Severity,
+) -> Vec<Issue> {
+    let root = tree.root_node();
+    if !root.has_error() {
+        return vec![];
+    }
+    let mut regions = Vec::new();
+    collect_error_regions(&root, &mut regions);
+    let Some(first) = regions.first() else { return vec![] };
+    let unread: usize = regions.iter().map(|r| r.byte_len).sum();
+    let share = 100.0 * unread as f64 / source.len().max(1) as f64;
+    vec![Issue {
+        file: fp.to_string(),
+        line: first.line,
+        column: first.column,
+        severity: sev,
+        rule: "syntax-error".to_string(),
+        message: format!(
+            "Could not parse {} region(s) covering {share:.1}% of the file; \
+             results for this file are incomplete",
+            regions.len()
+        ),
+    }]
+}
+
+struct ErrorRegion {
+    line: usize,
+    column: usize,
+    byte_len: usize,
+}
+
+fn collect_error_regions(node: &Node, out: &mut Vec<ErrorRegion>) {
+    if node.is_error() || node.is_missing() {
+        out.push(ErrorRegion {
+            line: node_line(node),
+            column: node_column(node),
+            byte_len: node.byte_range().len(),
+        });
+        return;
+    }
+    if !node.has_error() {
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_error_regions(&child, out);
+    }
 }
 
 /// Check if a block node contains no meaningful statements.

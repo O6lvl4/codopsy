@@ -1,9 +1,11 @@
 pub mod ast_utils;
 pub mod complexity;
+pub mod decl;
 pub mod language;
 pub mod linter;
 mod node_classify;
 mod rule_registry;
+mod rule_tables;
 pub mod rules;
 
 use crate::config::CodopsyConfig;
@@ -71,7 +73,7 @@ pub fn analyze_file(file_path: &str, config: &CodopsyConfig) -> FileAnalysis {
         }
     };
 
-    let complexity = complexity::analyze_complexity(&tree, source.as_bytes());
+    let complexity = complexity::analyze_complexity(&tree, source.as_bytes(), language);
     let issues = linter::lint_file(file_path, &source, &tree, config, language);
 
     FileAnalysis {

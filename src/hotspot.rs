@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::defaults;
 use crate::types::FileAnalysis;
-use crate::utils::git::get_file_churn_stats;
+use crate::utils::git::{get_file_churn_stats, repo_root};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +33,16 @@ fn classify_risk(score: f64) -> &'static str {
     }
 }
 
+/// Key under which `git log --name-only` reports this file: its path relative
+/// to the repository root. Stripping the *analysed* directory instead would
+/// silently match nothing whenever that directory is not the repo root.
+fn churn_key(file: &str, root: Option<&Path>) -> String {
+    let path = Path::new(file);
+    root.and_then(|r| path.strip_prefix(r).ok())
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| file.to_string())
+}
+
 pub fn detect_hotspots(
     target_dir: &Path,
     file_analyses: &[FileAnalysis],
@@ -41,14 +51,12 @@ pub fn detect_hotspots(
 ) -> HotspotResult {
     let since = format!("{months} months ago");
     let git_stats = get_file_churn_stats(target_dir, &since);
+    let root = repo_root(target_dir);
 
     let mut hotspots: Vec<HotspotInfo> = file_analyses
         .iter()
         .filter_map(|fa| {
-            let rel_path = Path::new(&fa.file)
-                .strip_prefix(target_dir)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| fa.file.clone());
+            let rel_path = churn_key(&fa.file, root.as_deref());
 
             let churn = git_stats.get(&rel_path)?;
             if churn.commits == 0 {
@@ -94,5 +102,28 @@ pub fn detect_hotspots(
     HotspotResult {
         period: format!("{months} months"),
         hotspots,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn churn_key_is_relative_to_the_repo_root() {
+        let root = Path::new("/repo");
+        assert_eq!(
+            churn_key("/repo/src/analyzer/linter.rs", Some(root)),
+            "src/analyzer/linter.rs"
+        );
+    }
+
+    #[test]
+    fn churn_key_falls_back_to_the_full_path_outside_a_repo() {
+        assert_eq!(churn_key("/elsewhere/a.rs", None), "/elsewhere/a.rs");
+        assert_eq!(
+            churn_key("/elsewhere/a.rs", Some(Path::new("/repo"))),
+            "/elsewhere/a.rs"
+        );
     }
 }
