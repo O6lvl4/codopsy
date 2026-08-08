@@ -2,7 +2,78 @@
   <img src="assets/banner.png" alt="codopsy — static code analysis" width="760">
 </p>
 
+<p align="center">
+  <a href="https://github.com/O6lvl4/codopsy/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/O6lvl4/codopsy?style=flat-square&labelColor=1c1c1c&color=EB9D2C"></a>
+  <a href="https://github.com/O6lvl4/codopsy/actions/workflows/ci.yml"><img alt="build" src="https://img.shields.io/github/actions/workflow/status/O6lvl4/codopsy/ci.yml?branch=main&style=flat-square&labelColor=1c1c1c"></a>
+  <img alt="languages" src="https://img.shields.io/badge/languages-35-EB9D2C?style=flat-square&labelColor=1c1c1c">
+  <img alt="lint rules" src="https://img.shields.io/badge/lint%20rules-182-EB9D2C?style=flat-square&labelColor=1c1c1c">
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/github/license/O6lvl4/codopsy?style=flat-square&labelColor=1c1c1c&color=EB9D2C"></a>
+</p>
+
 AST-level code quality analyzer for 35 languages with 182 lint rules. Uses [tree-sitter](https://tree-sitter.github.io/) to parse source code into ASTs and analyzes complexity, lint issues, and structural quality — without executing code.
+
+No language servers, no compilers, no code execution: one static binary parses
+everything from TypeScript to Lean 4 and scores it on the same scale.
+
+## Example
+
+```console
+$ codopsy analyze ./src -v
+Analyzing ./src ...
+Found 2 source file(s).
+  ✗ ./src/Proof.lean (complexity: 1, cognitive: 0, issues: 1 error)
+      score A (91/100) — complexity 35/35, issues 31/40, structure 25/25
+  ✗ ./src/parser.ts (complexity: 6, cognitive: 11, issues: 1 error, 3 warnings)
+      score B (80/100) — complexity 35/35, issues 20/40, structure 25/25
+
+=== Analysis Summary ===
+  Quality Score:  B (84/100)
+  Files analyzed: 2
+  Total issues:   6
+    Error:   2
+    Warning: 3
+    Info:    1
+  Avg complexity: 2.7
+  Max complexity: 6 (parse in ./src/parser.ts)
+  Scoring thresholds: cyclomatic >10, cognitive >15
+```
+
+What it found in those two files:
+
+```
+Proof.lean:1   error    no-sorry         `sorry` leaves this declaration unproved
+Proof.lean:3   info     no-partial-def   `partial` skips the termination checker
+parser.ts:1    warning  no-any           Unexpected `any` type
+parser.ts:2    warning  eqeqeq           Expected '===' instead of '=='
+parser.ts:3    warning  no-console       Unexpected console statement
+parser.ts:10   error    no-eval          eval() is not allowed
+```
+
+The full report is JSON — per file, per function, per issue (abbreviated here):
+
+```jsonc
+{
+  "score": { "overall": 84, "grade": "B", "distribution": { "A": 1, "B": 1, "C": 0, "D": 0, "F": 0 } },
+  "summary": { "totalFiles": 2, "totalIssues": 6, "averageComplexity": 2.6666666666666665 },
+  "scoringThresholds": { "cyclomaticComplexity": 10, "cognitiveComplexity": 15 },
+  "files": [
+    {
+      "file": "./src/parser.ts",
+      "complexity": {
+        "cyclomatic": 6,
+        "cognitive": 11,
+        "functions": [
+          { "name": "parse", "line": 1, "complexity": 6, "cognitiveComplexity": 11 }
+        ]
+      },
+      "issues": [
+        { "line": 10, "column": 11, "severity": "error", "rule": "no-eval", "message": "eval() is not allowed" }
+      ],
+      "score": { "score": 80, "grade": "B" }
+    }
+  ]
+}
+```
 
 ## Supported Languages
 
@@ -97,6 +168,45 @@ codopsy analyze ./src --no-degradation --fail-on-warning
 
 # Initialize config
 codopsy init
+```
+
+## Continuous integration
+
+codopsy is a single binary with no runtime dependencies, so CI is a download and
+a command. Exit code 1 on `--fail-on-error` (or `--fail-on-warning`) fails the job.
+
+```yaml
+name: Quality
+on: [push, pull_request]
+
+jobs:
+  codopsy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install codopsy
+        run: |
+          curl -sSfL https://github.com/O6lvl4/codopsy/releases/latest/download/codopsy-x86_64-unknown-linux-gnu.tar.gz | tar xz
+          sudo mv codopsy /usr/local/bin/
+      - run: codopsy analyze ./src --fail-on-error
+```
+
+To review only what a pull request touches, fetch enough history for the merge
+base and point `--diff` at the target branch:
+
+```yaml
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: codopsy analyze . --diff origin/${{ github.base_ref }} --fail-on-warning
+```
+
+To let existing debt stand but block new debt, commit a baseline
+(`codopsy analyze ./src --save-baseline` writes `.codopsy-baseline.json`) and
+gate on regressions instead of on absolute counts:
+
+```yaml
+      - run: codopsy analyze ./src --no-degradation
 ```
 
 ## Quality Score

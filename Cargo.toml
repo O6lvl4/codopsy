@@ -2,7 +2,10 @@
 name = "codopsy"
 version = "2.2.0"
 edition = "2021"
-description = "AST-level code quality analyzer for multiple languages"
+description = "AST-level code quality analyzer for 35 languages"
+license = "MIT"
+repository = "https://github.com/O6lvl4/codopsy"
+readme = "README.md"
 
 [[bin]]
 name = "codopsy"
