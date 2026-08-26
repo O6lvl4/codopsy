@@ -141,6 +141,16 @@ fn e2e_lean() {
 
 /// A Lean file the grammar reads end to end must not be reported as unparsed —
 /// otherwise `syntax-error` would be noise on every Lean project.
+/// 型の位置でしか使われない import を、未使用と誤って報告しないこと。
+///
+/// TypeScript の型注釈に出てくる名前は `type_identifier` という別の種類に
+/// なる。`identifier` だけを見ていたため、`import type { Foo }` も
+/// `import { Foo }` を型として使う場合も、すべて未使用と報告されていた。
+#[test]
+fn e2e_typescript_type_only_imports_are_used() {
+    run_clean_fixture("ts_clean.ts");
+}
+
 #[test]
 fn e2e_lean_clean_file_parses() {
     run_clean_fixture("lean_clean.lean");

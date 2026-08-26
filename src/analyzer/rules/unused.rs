@@ -231,6 +231,23 @@ fn is_js_name_used_outside_imports(root: &Node, source: &[u8], name: &str) -> bo
     found
 }
 
+/// Node kinds that can carry a reference to an imported name in JS/TS.
+///
+/// `identifier` alone is not enough for TypeScript. A name used only in a
+/// type position — `function f(x: Foo)`, `implements Foo`, `x satisfies Foo`
+/// — parses as `type_identifier`, so scanning for `identifier` reports every
+/// type-only import as unused. That misfires on `import type { Foo }` and on
+/// a plain `import { Foo }` used as a type alike.
+///
+/// `shorthand_property_identifier` covers `export default { Foo }`, where the
+/// value shorthand is its own node kind rather than an `identifier`.
+const REFERENCE_KINDS: [&str; 4] = [
+    "identifier",
+    "type_identifier",
+    "shorthand_property_identifier",
+    "shorthand_property_identifier_pattern",
+];
+
 fn walk_js_usage(node: &Node, source: &[u8], name: &str, found: &mut bool) {
     if *found {
         return;
@@ -238,7 +255,7 @@ fn walk_js_usage(node: &Node, source: &[u8], name: &str, found: &mut bool) {
     if matches!(node.kind(), "import_statement" | "import_declaration") {
         return;
     }
-    if node.kind() == "identifier" && node_text(node, source) == name {
+    if REFERENCE_KINDS.contains(&node.kind()) && node_text(node, source) == name {
         *found = true;
         return;
     }
