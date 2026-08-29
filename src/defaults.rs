@@ -49,6 +49,16 @@ pub const DENSITY_PENALTY_RATE: f64 = 0.8;
 /// Maximum issue density penalty
 pub const DENSITY_PENALTY_CAP: f64 = 15.0;
 
+// --- Parse coverage ---
+/// Percentage of a file (by bytes) the grammar may fail to parse before the
+/// file is treated as *unanalyzed* rather than scored. A file the grammar
+/// cannot read produces no functions and no issues, which otherwise yields a
+/// near-perfect score — so above this share we refuse to score it at all,
+/// exclude it from the project average, and surface it in the summary. A
+/// single unsupported construct tends to shred everything after it, so this is
+/// deliberately low.
+pub const UNANALYZED_MIN_SHARE: f64 = 20.0;
+
 // --- Hotspot scoring ---
 /// Cognitive complexity weight relative to cyclomatic in hotspot score
 pub const HOTSPOT_COGNITIVE_WEIGHT: f64 = 0.5;

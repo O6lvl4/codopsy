@@ -153,10 +153,15 @@ pub fn build_analysis_result(
         .max_by_key(|m| m.complexity);
 
     // Attach per-file scores, using the SAME thresholds the issue rules above
-    // were evaluated against — see `resolve_scoring_thresholds`.
+    // were evaluated against — see `resolve_scoring_thresholds`. Files the
+    // grammar could not read are left unscored so they don't count as clean.
     for fa in &mut file_analyses {
-        fa.score = Some(calculate_file_score(fa, thresholds));
+        if !fa.unanalyzed {
+            fa.score = Some(calculate_file_score(fa, thresholds));
+        }
     }
+
+    let unanalyzed_files = file_analyses.iter().filter(|f| f.unanalyzed).count();
 
     let mut result = AnalysisResult {
         timestamp: chrono::Utc::now().to_rfc3339(),
@@ -168,6 +173,7 @@ pub fn build_analysis_result(
             issues_by_severity,
             average_complexity: avg_complexity,
             max_complexity,
+            unanalyzed_files,
         },
         scoring_thresholds: thresholds,
         score: None,
