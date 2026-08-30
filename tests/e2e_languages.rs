@@ -104,6 +104,44 @@ fn e2e_go() {
     run_fixture("go_violations.go");
 }
 
+/// Go 1.27 generic methods must actually parse — not fall through as an
+/// unanalyzed error region. Guards the tree-sitter-go fork that adds
+/// `type_parameters` to `method_declaration`; if the grammar reverts, the
+/// method body becomes unreadable and this fails.
+#[test]
+fn e2e_go_generic_method_parses() {
+    let path = fixture_path("go_generic_method.go");
+    let analysis = analyze_file(&path, &CodopsyConfig::default());
+
+    assert!(
+        !analysis.unanalyzed,
+        "generic method fixture came back unanalyzed — grammar cannot read Go 1.27 methods"
+    );
+    assert!(
+        !analysis
+            .issues
+            .iter()
+            .any(|i| i.rule == "syntax-error" || i.rule == "parse-error"),
+        "generic method fixture produced parse errors: {:?}",
+        analysis.issues
+    );
+    // The method body was read: its function shows up in complexity analysis.
+    assert!(
+        analysis
+            .complexity
+            .functions
+            .iter()
+            .any(|f| f.name.contains("Map")),
+        "expected the `Map` method to be recognized, got {:?}",
+        analysis
+            .complexity
+            .functions
+            .iter()
+            .map(|f| &f.name)
+            .collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn e2e_python() {
     run_fixture("python_violations.py");
