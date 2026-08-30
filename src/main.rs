@@ -67,6 +67,10 @@ struct AnalyzeArgs {
     #[arg(long)]
     fail_on_error: bool,
 
+    /// Exit with code 1 if any file could not be parsed (unanalyzed)
+    #[arg(long)]
+    fail_on_unanalyzed: bool,
+
     /// Show summary only
     #[arg(short, long)]
     quiet: bool,
@@ -153,7 +157,12 @@ fn run_analyze(args: AnalyzeArgs) {
 
     write_output(&result, args.output, &args.format, is_stdout);
     handle_baseline(&result, &args.baseline_path, args.save_baseline, args.no_degradation, is_stdout);
-    check_fail_conditions(&result, args.fail_on_warning, args.fail_on_error);
+    check_fail_conditions(
+        &result,
+        args.fail_on_warning,
+        args.fail_on_error,
+        args.fail_on_unanalyzed,
+    );
 }
 
 fn resolve_files(target_dir: &Path, diff: Option<&str>, quiet: bool, config: &codopsy::config::CodopsyConfig) -> Vec<String> {
@@ -211,14 +220,96 @@ fn handle_baseline(result: &AnalysisResult, path: &str, do_save: bool, no_degrad
     }
 }
 
-fn check_fail_conditions(result: &AnalysisResult, fail_on_warning: bool, fail_on_error: bool) {
+fn check_fail_conditions(
+    result: &AnalysisResult,
+    fail_on_warning: bool,
+    fail_on_error: bool,
+    fail_on_unanalyzed: bool,
+) {
+    if should_fail(result, fail_on_warning, fail_on_error, fail_on_unanalyzed) {
+        std::process::exit(1);
+    }
+}
+
+/// Whether any requested `--fail-on-*` gate trips for this result.
+/// Kept pure (no exit) so the policy is unit-testable.
+///
+/// An unanalyzed file is one the grammar could not read; gating on it lets CI
+/// refuse to pass on files codopsy silently skipped rather than scored.
+fn should_fail(
+    result: &AnalysisResult,
+    fail_on_warning: bool,
+    fail_on_error: bool,
+    fail_on_unanalyzed: bool,
+) -> bool {
     let has_severity = |key: &str| {
         result.summary.issues_by_severity.get(key).copied().unwrap_or(0) > 0
     };
-    if fail_on_warning && has_severity("warning") {
-        std::process::exit(1);
+    (fail_on_unanalyzed && result.summary.unanalyzed_files > 0)
+        || (fail_on_warning && has_severity("warning"))
+        || (fail_on_error && has_severity("error"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codopsy::types::{ScoringThresholds, Summary};
+    use std::collections::HashMap;
+
+    fn result_with(warnings: usize, errors: usize, unanalyzed: usize) -> AnalysisResult {
+        let mut by_sev = HashMap::new();
+        by_sev.insert("warning".to_string(), warnings);
+        by_sev.insert("error".to_string(), errors);
+        by_sev.insert("info".to_string(), 0);
+        AnalysisResult {
+            timestamp: "t".to_string(),
+            target_dir: ".".to_string(),
+            files: vec![],
+            summary: Summary {
+                total_files: 0,
+                total_issues: warnings + errors,
+                issues_by_severity: by_sev,
+                average_complexity: 0.0,
+                max_complexity: None,
+                unanalyzed_files: unanalyzed,
+            },
+            scoring_thresholds: ScoringThresholds {
+                cyclomatic_complexity: Some(10),
+                cognitive_complexity: Some(15),
+            },
+            score: None,
+        }
     }
-    if fail_on_error && has_severity("error") {
-        std::process::exit(1);
+
+    #[test]
+    fn no_flags_never_fails() {
+        let r = result_with(3, 2, 5);
+        assert!(!should_fail(&r, false, false, false));
+    }
+
+    #[test]
+    fn fail_on_unanalyzed_only_trips_on_unanalyzed_files() {
+        // Unanalyzed present -> trips.
+        let with_unanalyzed = result_with(0, 0, 1);
+        assert!(should_fail(&with_unanalyzed, false, false, true));
+        // No unanalyzed, even with warnings/errors -> the unanalyzed gate stays quiet.
+        let clean_parse = result_with(9, 9, 0);
+        assert!(!should_fail(&clean_parse, false, false, true));
+    }
+
+    #[test]
+    fn unanalyzed_is_independent_of_severity_gates() {
+        // Only unanalyzed files, no issues: the warning/error gates don't see it,
+        // but the unanalyzed gate does.
+        let r = result_with(0, 0, 2);
+        assert!(!should_fail(&r, true, true, false));
+        assert!(should_fail(&r, false, false, true));
+    }
+
+    #[test]
+    fn severity_gates_still_work() {
+        assert!(should_fail(&result_with(1, 0, 0), true, false, false));
+        assert!(should_fail(&result_with(0, 1, 0), false, true, false));
+        assert!(!should_fail(&result_with(1, 0, 0), false, true, false));
     }
 }
