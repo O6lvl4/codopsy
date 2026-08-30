@@ -8,4 +8,5 @@ pub mod hotspot;
 pub mod reporter;
 pub mod scorer;
 pub mod types;
+pub mod version;
 pub mod utils;

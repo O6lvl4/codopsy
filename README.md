@@ -282,6 +282,17 @@ Config is searched upward from the target directory to the home directory.
 
 ## Rules
 
+### Version-aware rules
+
+Some rules read the version a project declares in its manifest and flag syntax
+that version does not allow — the way `go vet`'s `stdversion` check does. They
+only fire when the manifest is found and the declared version is too old; a
+missing manifest is never guessed at.
+
+| Rule | Default | Description |
+|------|---------|-------------|
+| `go-generic-method` | warning | Generic method used, but `go.mod` declares a version below go1.27 |
+
 ### JS/TS Rules (23)
 
 | Rule | Default | Description |
