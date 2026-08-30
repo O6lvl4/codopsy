@@ -75,7 +75,9 @@ pub fn analyze_file(file_path: &str, config: &CodopsyConfig) -> FileAnalysis {
     };
 
     let complexity = complexity::analyze_complexity(&tree, source.as_bytes(), language);
-    let issues = linter::lint_file(file_path, &source, &tree, config, language);
+    let mut issues = linter::lint_file(file_path, &source, &tree, config, language);
+    // Flag syntax used below the version the project's manifest declares.
+    crate::version::check_version_features(&tree, language, file_path, config, &mut issues);
 
     // A file the grammar could only partially read yields almost no functions
     // and almost no issues, which would otherwise score near-perfect. When the
