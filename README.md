@@ -166,6 +166,9 @@ codopsy analyze ./src --save-baseline
 # Fail CI if quality degrades
 codopsy analyze ./src --no-degradation --fail-on-warning
 
+# Fail CI if any file could not be parsed (grammar too old, unsupported syntax)
+codopsy analyze ./src --fail-on-unanalyzed
+
 # Initialize config
 codopsy init
 ```
@@ -174,6 +177,8 @@ codopsy init
 
 codopsy is a single binary with no runtime dependencies, so CI is a download and
 a command. Exit code 1 on `--fail-on-error` (or `--fail-on-warning`) fails the job.
+`--fail-on-unanalyzed` additionally fails when a file could not be parsed at all,
+so a grammar that is too old for the syntax in use can't slip through unscored.
 
 ```yaml
 name: Quality
