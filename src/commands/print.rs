@@ -16,6 +16,12 @@ pub fn print_summary(result: &AnalysisResult) {
         "  Files analyzed: \x1b[1m{}\x1b[0m",
         result.summary.total_files
     );
+    if result.summary.unanalyzed_files > 0 {
+        eprintln!(
+            "    \x1b[33mUnanalyzed:\x1b[0m {} (grammar could not parse; excluded from score)",
+            result.summary.unanalyzed_files
+        );
+    }
     eprintln!(
         "  Total issues:   \x1b[1m{}\x1b[0m",
         result.summary.total_issues
@@ -65,6 +71,23 @@ fn format_threshold(threshold: Option<usize>) -> String {
 }
 
 pub fn print_verbose(analysis: &FileAnalysis) {
+    // A file the grammar could not read is not scored; say so plainly instead
+    // of printing a per-component score that was never computed.
+    if analysis.unanalyzed {
+        let detail = analysis
+            .issues
+            .iter()
+            .find(|i| i.rule == "syntax-error" || i.rule == "parse-error")
+            .map(|i| i.message.as_str())
+            .unwrap_or("grammar could not parse this file");
+        eprintln!(
+            "  \x1b[33m⚠ \x1b[36m{}\x1b[0m (unanalyzed — excluded from score)",
+            analysis.file
+        );
+        eprintln!("      {detail}");
+        return;
+    }
+
     let issue_count = analysis.issues.len();
     let max_cc = analysis
         .complexity

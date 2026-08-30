@@ -147,7 +147,15 @@ pub fn calculate_project_score(result: &AnalysisResult) -> ProjectScore {
     };
 
     // Issue density penalty: penalizes projects with many scattered issues.
-    let total_issues: usize = result.files.iter().map(|f| f.issues.len()).sum();
+    // Unanalyzed files are excluded — their issues (a lone `syntax-error`, plus
+    // whatever noise a shredded tree produced) are not reliable signal, and the
+    // file is already kept out of the average.
+    let total_issues: usize = result
+        .files
+        .iter()
+        .filter(|f| !f.unanalyzed)
+        .map(|f| f.issues.len())
+        .sum();
     let density_penalty = ((total_issues as f64).sqrt() * defaults::DENSITY_PENALTY_RATE)
         .round()
         .min(defaults::DENSITY_PENALTY_CAP) as i32;
@@ -176,6 +184,7 @@ mod tests {
             },
             issues,
             score: None,
+            unanalyzed: false,
         }
     }
 
@@ -319,6 +328,67 @@ mod tests {
         assert_eq!(score, defaults::WEIGHT_ISSUES);
     }
 
+    /// The bug Stage 0 exists to prevent: a file the grammar could not read
+    /// yields no functions and no scored issues, which used to score ~A(99) and
+    /// count as a clean file. An unanalyzed file must be left unscored and kept
+    /// out of both the weighted average and the grade distribution.
+    #[test]
+    fn unanalyzed_file_is_excluded_from_project_score() {
+        let clean = FileAnalysis {
+            score: Some(FileScore {
+                score: 100,
+                grade: Grade::A,
+                breakdown: ScoreBreakdown {
+                    complexity: 35.0,
+                    issues: 40.0,
+                    structure: 25.0,
+                },
+            }),
+            ..make_analysis(
+                vec![FunctionComplexity {
+                    name: "f".to_string(),
+                    line: 1,
+                    complexity: 1,
+                    cognitive_complexity: 0,
+                }],
+                vec![],
+            )
+        };
+        // A file the grammar could not read: unscored, flagged unanalyzed,
+        // carrying only the informational syntax-error.
+        let unreadable = FileAnalysis {
+            unanalyzed: true,
+            ..make_analysis(vec![], vec![make_issue("syntax-error", Severity::Info)])
+        };
+
+        let result = AnalysisResult {
+            timestamp: "test".to_string(),
+            target_dir: ".".to_string(),
+            files: vec![clean, unreadable],
+            summary: crate::types::Summary {
+                total_files: 2,
+                total_issues: 1,
+                issues_by_severity: HashMap::new(),
+                average_complexity: 0.0,
+                max_complexity: None,
+                unanalyzed_files: 1,
+            },
+            scoring_thresholds: default_thresholds(),
+            score: None,
+        };
+
+        let project = calculate_project_score(&result);
+        // Only the one clean file counts toward the distribution.
+        assert_eq!(project.distribution.get("A"), Some(&1));
+        assert_eq!(
+            project.distribution.values().sum::<usize>(),
+            1,
+            "the unanalyzed file must not appear in any grade bucket"
+        );
+        // And it does not drag the average up as a phantom A.
+        assert_eq!(project.overall, 100);
+    }
+
     #[test]
     fn empty_project_gets_perfect_score() {
         let result = AnalysisResult {
@@ -331,6 +401,7 @@ mod tests {
                 issues_by_severity: HashMap::new(),
                 average_complexity: 0.0,
                 max_complexity: None,
+                unanalyzed_files: 0,
             },
             scoring_thresholds: default_thresholds(),
             score: None,

@@ -121,6 +121,45 @@ pub fn check_todo_comments(
     })
 }
 
+/// What the grammar could not parse in a file: how many disjoint error regions,
+/// how many bytes they cover, and where the first one starts. `None` means the
+/// tree parsed cleanly.
+///
+/// This is the single source of truth for parse coverage. Both the
+/// `syntax-error` issue (below) and the decision to treat a file as *unanalyzed*
+/// (see `analyzer::analyze_file`) are derived from it, so they never disagree.
+pub struct ParseCoverage {
+    pub regions: usize,
+    pub unparsed_bytes: usize,
+    pub first_line: usize,
+    pub first_column: usize,
+}
+
+impl ParseCoverage {
+    /// Percentage of the file (by bytes) the grammar could not parse.
+    pub fn unparsed_share(&self, source_len: usize) -> f64 {
+        100.0 * self.unparsed_bytes as f64 / source_len.max(1) as f64
+    }
+}
+
+/// Scan a parsed tree for the regions the grammar could not read.
+/// Returns `None` when the tree has no errors.
+pub fn scan_parse_coverage(tree: &Tree) -> Option<ParseCoverage> {
+    let root = tree.root_node();
+    if !root.has_error() {
+        return None;
+    }
+    let mut regions = Vec::new();
+    collect_error_regions(&root, &mut regions);
+    let first = regions.first()?;
+    Some(ParseCoverage {
+        regions: regions.len(),
+        unparsed_bytes: regions.iter().map(|r| r.byte_len).sum(),
+        first_line: first.line,
+        first_column: first.column,
+    })
+}
+
 /// Report source the parser could not make sense of.
 ///
 /// Without this, a file the grammar cannot read produces no functions and no
@@ -132,25 +171,20 @@ pub fn check_syntax_errors(
     fp: &str,
     sev: Severity,
 ) -> Vec<Issue> {
-    let root = tree.root_node();
-    if !root.has_error() {
+    let Some(coverage) = scan_parse_coverage(tree) else {
         return vec![];
-    }
-    let mut regions = Vec::new();
-    collect_error_regions(&root, &mut regions);
-    let Some(first) = regions.first() else { return vec![] };
-    let unread: usize = regions.iter().map(|r| r.byte_len).sum();
-    let share = 100.0 * unread as f64 / source.len().max(1) as f64;
+    };
+    let share = coverage.unparsed_share(source.len());
     vec![Issue {
         file: fp.to_string(),
-        line: first.line,
-        column: first.column,
+        line: coverage.first_line,
+        column: coverage.first_column,
         severity: sev,
         rule: "syntax-error".to_string(),
         message: format!(
             "Could not parse {} region(s) covering {share:.1}% of the file; \
              results for this file are incomplete",
-            regions.len()
+            coverage.regions
         ),
     }]
 }
@@ -297,5 +331,36 @@ mod tests {
         assert!(check_todo("# TODO: fix", SourceLanguage::Python));
         assert!(check_todo("# FIXME: fix", SourceLanguage::Ruby));
         assert!(check_todo("// HACK: fix", SourceLanguage::Rust));
+    }
+
+    #[test]
+    fn clean_source_has_no_parse_coverage() {
+        let tree = parse_source("package main\nfunc main() {}", SourceLanguage::Go).unwrap();
+        assert!(scan_parse_coverage(&tree).is_none());
+    }
+
+    #[test]
+    fn broken_source_reports_high_unparsed_share() {
+        // Bash grammar cannot make sense of a big brace-heavy blob.
+        let src = "if if if )))(((  } { } { fi fi done done esac\nfor for while }{ ;;;";
+        let tree = parse_source(src, SourceLanguage::Bash).unwrap();
+        let coverage = scan_parse_coverage(&tree).expect("this source does not parse cleanly");
+        assert!(coverage.regions >= 1);
+        // The unparsed share is a real percentage of the file.
+        let share = coverage.unparsed_share(src.len());
+        assert!(share > 0.0 && share <= 100.0, "share out of range: {share}");
+    }
+
+    #[test]
+    fn unparsed_share_is_bytes_over_length() {
+        let coverage = ParseCoverage {
+            regions: 1,
+            unparsed_bytes: 40,
+            first_line: 1,
+            first_column: 1,
+        };
+        assert_eq!(coverage.unparsed_share(100), 40.0);
+        // Guards against divide-by-zero on an empty file.
+        assert_eq!(coverage.unparsed_share(0), 4000.0);
     }
 }

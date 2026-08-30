@@ -169,6 +169,11 @@ pub struct FileAnalysis {
     pub issues: Vec<Issue>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<FileScore>,
+    /// True when the grammar could not read enough of the file to score it.
+    /// Such files are left unscored (`score: None`) and excluded from the
+    /// project average and grade distribution. Omitted from JSON when false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unanalyzed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,6 +192,11 @@ pub struct Summary {
     pub issues_by_severity: HashMap<String, usize>,
     pub average_complexity: f64,
     pub max_complexity: Option<MaxComplexityInfo>,
+    /// Files the grammar could not read enough of to score. They are counted
+    /// among `total_files` but excluded from the score. Defaults to 0 so older
+    /// reports still deserialize.
+    #[serde(default)]
+    pub unanalyzed_files: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

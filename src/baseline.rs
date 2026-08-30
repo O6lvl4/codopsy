@@ -236,6 +236,7 @@ mod tests {
                 issues_by_severity,
                 average_complexity: 0.0,
                 max_complexity: None,
+                unanalyzed_files: 0,
             },
             scoring_thresholds: ScoringThresholds {
                 cyclomatic_complexity: Some(10),
