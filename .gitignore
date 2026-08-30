@@ -3,3 +3,7 @@ codopsy-report.*
 .codopsy-baseline.json
 /sample
 /sample.beam
+
+# Python bytecode from test fixtures
+__pycache__/
+*.pyc
