@@ -74,6 +74,57 @@ pub fn is_if_node(kind: &str) -> bool {
     )
 }
 
+/// Nodes that only wrap one expression: Almide puts every expression in an
+/// `expression` node and most of them in a `primary_expression`, so the `if`
+/// of an `else if` sits two nodes below the `else` it continues.
+fn is_expression_wrapper(kind: &str) -> bool {
+    matches!(kind, "expression" | "primary_expression")
+}
+
+/// The expression a wrapper chain holds: `expression > primary_expression >
+/// if_expression` is the `if_expression`.
+pub fn unwrap_expression<'t>(node: Node<'t>) -> Node<'t> {
+    let mut n = node;
+    while is_expression_wrapper(n.kind()) && n.named_child_count() == 1 {
+        match n.named_child(0) {
+            Some(inner) => n = inner,
+            None => break,
+        }
+    }
+    n
+}
+
+/// Is this `if` the tail of an `else if`, rather than an `if` of its own?
+/// It continues a chain, so it neither nests (max-depth, cognitive
+/// complexity) nor pays for nesting. Grammars say so three ways: an
+/// `else_clause` around it (JS/TS, Rust, Go, C, Java), the `else` field of
+/// the parent `if` (Lean 4), or that field through expression wrappers
+/// (Almide).
+pub fn is_else_if(node: &Node) -> bool {
+    if !is_if_node(node.kind()) {
+        return false;
+    }
+    let mut child = *node;
+    let mut parent = node.parent();
+    while let Some(p) = parent {
+        let kind = p.kind();
+        if kind == "else_clause" {
+            return true;
+        }
+        if is_expression_wrapper(kind) {
+            child = p;
+            parent = p.parent();
+            continue;
+        }
+        if is_if_node(kind) {
+            let (_, _, else_field) = if_fields(kind);
+            return p.child_by_field_name(else_field).is_some_and(|alt| alt.id() == child.id());
+        }
+        return false;
+    }
+    false
+}
+
 /// Is this a nesting construct for cognitive complexity?
 pub fn is_nesting_construct(kind: &str, lang: SourceLanguage) -> bool {
     if lang == SourceLanguage::Lean {
@@ -107,7 +158,6 @@ pub fn is_nesting_construct(kind: &str, lang: SourceLanguage) -> bool {
             | "rescue"
             // Almide
             | "for_in_expression"
-            | "do_expression"
             // Erlang
             | "case_expr"
             | "receive_expr"

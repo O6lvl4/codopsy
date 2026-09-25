@@ -1,0 +1,40 @@
+// Almide as it is written today (almide 0.63). This fixture guards that
+// codopsy's tree-sitter-almide reads it; before grammar v0.3.0 each of these
+// forms was an error region and the whole file came back `unanalyzed`.
+
+import almai.core as core
+
+type Request = { model: String, schema: Value? = none, tags: List[String] = [] }
+
+type Window = { start: Int, end: Int }
+
+// `T?` for Option, and a module-qualified type
+fn first_long(xs: List[String]) -> String? = list.find(xs, (x) => string.len(x) > 3)
+
+fn finish_of(raw: String) -> core.Finish =
+  if raw == "stop" then core.FinishStop else core.FinishOther(raw)
+
+// escaped quotes and slashes stay inside the string
+let SAMPLE = "{\"ok\":true} https://example.com"
+
+// a fallible return, `?` and `!` in a match head, a list on its own line
+effect fn load(path: String) -> List[String]! = {
+  let text = match fs.read_text(path)? {
+    some(t) => t,
+    none => "",
+  }
+  var lines: List[String] = []
+  for line in string.split(text, "\n") {
+    if string.trim(line) != "" then lines = lines + [line] else ()
+  }
+  [path]
+    |> list.map((p) => p)
+}
+
+fn clamp(w: Window, total: Int) -> Window =
+  Window { ...w, start: int.max(1, w.start), end: int.min(total, w.end) }
+
+effect fn both(a: String, b: String) -> (List[String], List[String]) = {
+  let (x, y) = fan { load(a)!, load(b)! }
+  (x, y)
+}

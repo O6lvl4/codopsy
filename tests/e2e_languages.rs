@@ -142,6 +142,36 @@ fn e2e_go_generic_method_parses() {
     );
 }
 
+/// Current Almide must parse: `T?`, module-qualified types, `-> T!`, fan
+/// blocks, escaped quotes in strings. Before tree-sitter-almide v0.3.0 each
+/// was an error region and almai, comide and golemide files dropped out of
+/// the score as `unanalyzed`.
+#[test]
+fn e2e_almide_current_syntax_parses() {
+    let path = fixture_path("almide_current.almd");
+    let analysis = analyze_file(&path, &CodopsyConfig::default());
+
+    assert!(
+        !analysis.unanalyzed,
+        "Almide fixture came back unanalyzed — the grammar cannot read current Almide"
+    );
+    assert!(
+        !analysis
+            .issues
+            .iter()
+            .any(|i| i.rule == "syntax-error" || i.rule == "parse-error"),
+        "Almide fixture produced parse errors: {:?}",
+        analysis.issues
+    );
+    let names: Vec<&String> = analysis.complexity.functions.iter().map(|f| &f.name).collect();
+    for expected in ["first_long", "finish_of", "load", "clamp", "both"] {
+        assert!(
+            names.iter().any(|n| n.contains(expected)),
+            "expected `{expected}` among the functions, got {names:?}"
+        );
+    }
+}
+
 #[test]
 fn e2e_python() {
     run_fixture("python_violations.py");

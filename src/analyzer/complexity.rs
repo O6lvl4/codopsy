@@ -126,27 +126,11 @@ impl<'a> CogCtx<'a> {
     }
 
     fn handle_if(&mut self, node: &Node, nesting: usize) {
-        self.complexity += if self.is_else_if(node) { 1 } else { 1 + nesting };
+        // An `else if` costs a flat +1 instead of `1 + nesting`.
+        self.complexity += if is_else_if(node) { 1 } else { 1 + nesting };
         self.score_condition(node);
         self.walk_consequence(node, nesting);
         self.walk_alternative(node, nesting);
-    }
-
-    /// An `else if` costs a flat +1 instead of `1 + nesting`. Most grammars wrap
-    /// the tail in an `else_clause`; Lean 4 puts the nested `if_then_else`
-    /// straight into the `else` field.
-    fn is_else_if(&self, node: &Node) -> bool {
-        let Some(parent) = node.parent() else { return false };
-        if parent.kind() == "else_clause" {
-            return true;
-        }
-        if !self.is_lean() || !is_if_node(parent.kind()) {
-            return false;
-        }
-        let (_, _, else_field) = if_fields(parent.kind());
-        parent
-            .child_by_field_name(else_field)
-            .is_some_and(|alt| alt.id() == node.id())
     }
 
     fn score_condition(&mut self, node: &Node) {
@@ -182,6 +166,12 @@ impl<'a> CogCtx<'a> {
                 self.complexity += 1;
                 self.walk(&alternative, nesting + 1);
             }
+            return;
+        }
+        // Almide wraps the `if` of an `else if` in expression nodes.
+        let inner = unwrap_expression(alternative);
+        if inner.id() != alternative.id() && is_if_node(inner.kind()) {
+            self.handle_if(&inner, nesting);
             return;
         }
         let mut cursor = alternative.walk();
@@ -300,6 +290,29 @@ mod tests {
 
     fn analyze_lean(source: &str) -> ComplexityResult {
         analyze(source, SourceLanguage::Lean)
+    }
+
+    fn analyze_almide(source: &str) -> ComplexityResult {
+        analyze(source, SourceLanguage::Almide)
+    }
+
+    #[test]
+    fn almide_else_if_does_not_nest() {
+        let result = analyze_almide(
+            "fn f(n: Int) -> String =\n  if n == 0 then \"z\"\n  else if n < 10 then \"s\"\n  else if n < 100 then \"m\"\n  else \"b\"\n",
+        );
+        assert_eq!(result.functions[0].complexity, 4);
+        // `if` +1, each `else if` +1, `else` +1: flat, as in Lean and JS.
+        assert_eq!(result.functions[0].cognitive_complexity, 4);
+    }
+
+    #[test]
+    fn almide_if_inside_a_branch_nests() {
+        let result = analyze_almide(
+            "fn f(a: Int, b: Int) -> Int =\n  if a == 0 then (if b == 0 then 1 else 2)\n  else 3\n",
+        );
+        // outer if +1, inner if at nesting 1 +2, inner else +1, outer else +1
+        assert_eq!(result.functions[0].cognitive_complexity, 5);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use tree_sitter::{Node, Tree};
 
 use crate::analyzer::ast_utils::{is_function_node, node_column, node_line};
+use crate::analyzer::node_classify::is_else_if;
 use crate::types::{Issue, Severity};
 
 fn effective_line_count(source: &[u8]) -> usize {
@@ -68,7 +69,10 @@ impl<'a> DepthCtx<'a> {
         let kind = node.kind();
         // Keyword tokens carry the same kind as the construct they open in
         // several grammars (Ruby's `if`, Lean's `if`); only the node nests.
-        let increases = node.is_named() && is_depth_increment(kind);
+        // An `else if` continues its chain at the same depth, as ESLint's
+        // max-depth counts it: `if a {} else if b {} else if c {}` is one
+        // level, however long the chain.
+        let increases = node.is_named() && is_depth_increment(kind) && !is_else_if(node);
 
         let new_depth = if increases { depth + 1 } else { depth };
 
@@ -198,4 +202,32 @@ fn count_params(params: &Node) -> usize {
             !matches!(c.kind(), "(" | ")" | "," | "|" | "comment" | "line_comment" | "block_comment")
         })
         .count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn depth_issues(source: &str, language: tree_sitter::Language, max: usize) -> Vec<Issue> {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(&language).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        check_max_depth(&tree, source.as_bytes(), "t", Severity::Warning, max)
+    }
+
+    #[test]
+    fn an_else_if_chain_is_one_level_deep() {
+        let js = "function f(a) { if (a == 1) { x() } else if (a == 2) { y() } else if (a == 3) { z() } else { w() } }";
+        assert!(depth_issues(js, tree_sitter_javascript::LANGUAGE.into(), 1).is_empty());
+        let almide = "fn f(a: Int) -> Int =\n  if a == 1 then 1\n  else if a == 2 then 2\n  else if a == 3 then 3\n  else 4\n";
+        assert!(depth_issues(almide, tree_sitter_almide::LANGUAGE.into(), 1).is_empty());
+    }
+
+    #[test]
+    fn an_if_inside_a_branch_still_nests() {
+        let almide = "fn f(a: Int, b: Int) -> Int =\n  if a == 1 then (if b == 1 then 1 else 2)\n  else 3\n";
+        assert_eq!(depth_issues(almide, tree_sitter_almide::LANGUAGE.into(), 1).len(), 1);
+        let js = "function f(a, b) { if (a) { if (b) { x() } } }";
+        assert_eq!(depth_issues(js, tree_sitter_javascript::LANGUAGE.into(), 1).len(), 1);
+    }
 }

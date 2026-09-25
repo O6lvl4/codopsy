@@ -1,6 +1,6 @@
 [package]
 name = "codopsy"
-version = "2.2.0"
+version = "2.3.0"
 edition = "2021"
 description = "AST-level code quality analyzer for 35 languages"
 license = "MIT"
@@ -44,7 +44,7 @@ tree-sitter-lua = "0.5"
 tree-sitter-zig = "1.1"
 tree-sitter-elixir = "0.3"
 tree-sitter-yaml = "0.7"
-tree-sitter-almide = { git = "https://github.com/almide/tree-sitter-almide", tag = "v0.1.0" }
+tree-sitter-almide = { git = "https://github.com/almide/tree-sitter-almide", tag = "v0.3.0" }
 tree-sitter-clojure = "0.1"
 tree-sitter-erlang = "0.16"
 tree-sitter-gleam = "1.0"
