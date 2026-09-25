@@ -170,7 +170,7 @@ checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
 name = "codopsy"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -578,8 +578,8 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter-almide"
-version = "0.1.0"
-source = "git+https://github.com/almide/tree-sitter-almide?tag=v0.1.0#b5892bf3e8d6e6fbce46f24ba503f9075011751f"
+version = "0.3.0"
+source = "git+https://github.com/almide/tree-sitter-almide?tag=v0.3.0#0b718d193881db0b74d733cc6b585f4d475bf756"
 dependencies = [
  "cc",
  "tree-sitter-language",

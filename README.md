@@ -527,7 +527,7 @@ Each has 3–5 dedicated rules targeting debug output, unsafe patterns, and lang
 | Rule | Default | Description |
 |------|---------|-------------|
 | `max-lines` | 300 | Maximum lines per file |
-| `max-depth` | 4 | Maximum nesting depth |
+| `max-depth` | 4 | Maximum nesting depth (an `else if` chain counts as one level) |
 | `max-params` | 4 | Maximum function parameters |
 | `max-complexity` | 10 | Maximum cyclomatic complexity per function |
 | `max-cognitive-complexity` | 15 | Maximum cognitive complexity per function |
