@@ -14,6 +14,13 @@ fn first_long(xs: List[String]) -> String? = list.find(xs, (x) => string.len(x) 
 fn finish_of(raw: String) -> core.Finish =
   if raw == "stop" then core.FinishStop else core.FinishOther(raw)
 
+// a module-qualified case in a pattern
+fn stopped(f: core.Finish) -> Bool = match f {
+  core.FinishStop => true,
+  core.FinishOther(_) => false,
+  _ => false,
+}
+
 // escaped quotes and slashes stay inside the string
 let SAMPLE = "{\"ok\":true} https://example.com"
 
