@@ -164,7 +164,7 @@ fn e2e_almide_current_syntax_parses() {
         analysis.issues
     );
     let names: Vec<&String> = analysis.complexity.functions.iter().map(|f| &f.name).collect();
-    for expected in ["first_long", "finish_of", "load", "clamp", "both"] {
+    for expected in ["first_long", "finish_of", "stopped", "load", "clamp", "both"] {
         assert!(
             names.iter().any(|n| n.contains(expected)),
             "expected `{expected}` among the functions, got {names:?}"
