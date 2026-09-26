@@ -217,6 +217,35 @@ mod tests {
     }
 
     #[test]
+    fn go_fprintf_to_a_writer_is_not_a_print() {
+        let src = "package main\nimport (\"fmt\"; \"os\"; \"strings\")\nfunc main() { var b strings.Builder; fmt.Fprintf(&b, \"x\"); fmt.Fprintln(os.Stderr, \"y\") }";
+        let prints: Vec<_> = lint_go(src).into_iter().filter(|i| i.rule == "no-fmt-print").collect();
+        assert_eq!(prints.len(), 1, "only the write to os.Stderr is a print: {prints:?}");
+    }
+
+    #[test]
+    fn detects_go_range_over_a_string() {
+        for src in [
+            "package main\nfunc f(s string) { for _, r := range s { _ = r } }",
+            "package main\nfunc f() { var s string; for _, r := range s { _ = r } }",
+            "package main\nfunc f() { s := \"abc\"; for _, r := range s { _ = r } }",
+        ] {
+            assert!(lint_go(src).iter().any(|i| i.rule == "no-range-over-string"), "{src}");
+        }
+    }
+
+    #[test]
+    fn go_range_over_a_slice_or_map_is_not_flagged() {
+        for src in [
+            "package main\nfunc f(xs []string) { for _, x := range xs { _ = x } }",
+            "package main\nfunc f() { m := map[string]int{}; for k := range m { _ = k } }",
+            "package main\nfunc f(s string) { g := func(xs []int) { for _, x := range xs { _ = x } }; _ = g }",
+        ] {
+            assert!(!lint_go(src).iter().any(|i| i.rule == "no-range-over-string"), "{src}");
+        }
+    }
+
+    #[test]
     fn detects_go_defer_in_loop() {
         let issues = lint_go("package main\nfunc f() { for i := 0; i < 10; i++ { defer close() } }");
         assert!(issues.iter().any(|i| i.rule == "no-defer-in-loop"));
