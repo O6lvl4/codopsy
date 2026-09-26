@@ -32,7 +32,15 @@ pub fn check_no_fmt_print(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -
         let Some(field) = func.child_by_field_name("field") else { return };
         if node_text(&operand, ctx.source) == "fmt" {
             let method = node_text(&field, ctx.source);
-            if matches!(method, "Println" | "Printf" | "Print" | "Fprintf" | "Fprintln") {
+            // Fprint* writes where it is told to; only stdout and stderr are prints.
+            let to_console = || {
+                node.child_by_field_name("arguments")
+                    .and_then(|args| args.named_child(0))
+                    .is_some_and(|w| matches!(node_text(&w, ctx.source), "os.Stdout" | "os.Stderr"))
+            };
+            let print = matches!(method, "Println" | "Printf" | "Print")
+                || (matches!(method, "Fprintf" | "Fprintln" | "Fprint") && to_console());
+            if print {
                 ctx.report(
                     node,
                     "no-fmt-print",
@@ -224,30 +232,91 @@ fn find_naked_returns(node: &tree_sitter::Node, ctx: &mut super::Ctx) {
 }
 
 /// Detect `for ... range` over a string variable (iterates runes, but often misunderstood).
+/// Only an identifier the enclosing function declares as a string is flagged:
+/// a `string` parameter, `var x string`, or `x := "..."`. Without types, any
+/// other identifier (a slice, a map, a channel) is not reported.
 pub fn check_no_range_over_string(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> Vec<Issue> {
     run_check(tree, source, fp, sev, |node, ctx| {
         if node.kind() != "for_statement" {
             return;
         }
-        // Look for a range_clause child
         let mut cursor = node.walk();
-        let range_clause = node.children(&mut cursor)
-            .find(|c| c.kind() == "range_clause");
+        let range_clause = node.children(&mut cursor).find(|c| c.kind() == "range_clause");
         let Some(range) = range_clause else { return };
-        // The right side of the range clause is the iterable
         let Some(right) = range.child_by_field_name("right") else { return };
-        // Heuristic: flag if the iterable is a plain identifier (likely a string variable)
-        if right.kind() == "identifier" {
-            let name = node_text(&right, ctx.source);
-            // Skip common non-string iterables
-            if !name.is_empty() {
-                ctx.report(
-                    node,
-                    "no-range-over-string",
-                    format!("Iterating over `{name}` with range yields runes, not bytes; ensure this is intentional"),
-                );
-            }
+        if right.kind() != "identifier" {
+            return;
         }
+        let name = node_text(&right, ctx.source);
+        let Some(func) = enclosing_function(node) else { return };
+        if declares_string(&func, name, ctx.source) {
+            ctx.report(
+                node,
+                "no-range-over-string",
+                format!("Iterating over `{name}` with range yields runes, not bytes; ensure this is intentional"),
+            );
+        }
+    })
+}
+
+fn enclosing_function<'t>(node: &tree_sitter::Node<'t>) -> Option<tree_sitter::Node<'t>> {
+    let mut cur = node.parent();
+    while let Some(n) = cur {
+        if matches!(n.kind(), "function_declaration" | "method_declaration" | "func_literal") {
+            return Some(n);
+        }
+        cur = n.parent();
+    }
+    None
+}
+
+/// Whether `scope` declares `name` as a string: a parameter or var of type
+/// `string`, or a short declaration from a string literal.
+fn declares_string(scope: &tree_sitter::Node, name: &str, source: &[u8]) -> bool {
+    let mut stack = vec![*scope];
+    while let Some(n) = stack.pop() {
+        match n.kind() {
+            "parameter_declaration" | "var_spec" => {
+                if typed_string(&n, name, source) {
+                    return true;
+                }
+            }
+            "short_var_declaration" => {
+                if literal_string(&n, name, source) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+        let mut cursor = n.walk();
+        stack.extend(n.children(&mut cursor));
+    }
+    false
+}
+
+fn typed_string(decl: &tree_sitter::Node, name: &str, source: &[u8]) -> bool {
+    let Some(ty) = decl.child_by_field_name("type") else { return false };
+    if node_text(&ty, source) != "string" {
+        return false;
+    }
+    let mut cursor = decl.walk();
+    let found = decl
+        .children_by_field_name("name", &mut cursor)
+        .any(|id| node_text(&id, source) == name);
+    found
+}
+
+fn literal_string(decl: &tree_sitter::Node, name: &str, source: &[u8]) -> bool {
+    let (Some(left), Some(right)) = (decl.child_by_field_name("left"), decl.child_by_field_name("right")) else {
+        return false;
+    };
+    let names: Vec<&str> = node_text(&left, source).split(',').map(str::trim).collect();
+    let values: Vec<tree_sitter::Node> = {
+        let mut cursor = right.walk();
+        right.named_children(&mut cursor).collect()
+    };
+    names.iter().zip(values.iter()).any(|(n, v)| {
+        *n == name && matches!(v.kind(), "interpreted_string_literal" | "raw_string_literal")
     })
 }
 
