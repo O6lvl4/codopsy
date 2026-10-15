@@ -5,6 +5,20 @@ use crate::types::{Issue, Severity};
 
 use super::run_check;
 
+/// A file inside a crate's `tests` directory (the nearest `tests` above it
+/// sits next to a `Cargo.toml`) is Cargo integration-test code — `tests/*.rs`
+/// and the modules they pull in — as a whole, the way a `mod tests` block is
+/// inside a source file. A `tests` directory with no crate beside it, such as
+/// one higher up an absolute path, does not count.
+pub(crate) fn is_test_file(file_path: &str) -> bool {
+    std::path::Path::new(file_path)
+        .ancestors()
+        .skip(1)
+        .find(|dir| dir.file_name().is_some_and(|n| n == "tests"))
+        .and_then(|tests| tests.parent())
+        .is_some_and(|krate| krate.join("Cargo.toml").is_file())
+}
+
 fn is_in_test_module(node: &Node, source: &[u8]) -> bool {
     let mut current = node.parent();
     while let Some(n) = current {
@@ -38,7 +52,10 @@ pub fn check_no_unwrap(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> V
             return;
         }
         let Some(field) = func.child_by_field_name("field") else { return };
-        if node_text(&field, ctx.source) == "unwrap" && !is_in_test_module(node, ctx.source) {
+        if node_text(&field, ctx.source) == "unwrap"
+            && !is_test_file(ctx.file_path)
+            && !is_in_test_module(node, ctx.source)
+        {
             ctx.report(node, "no-unwrap", "Avoid `.unwrap()`, use `?` or handle the error explicitly".into());
         }
     })
@@ -76,7 +93,12 @@ pub fn check_no_println(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> 
         }
         let Some(m) = node.child_by_field_name("macro") else { return };
         let name = node_text(&m, ctx.source);
-        if matches!(name, "println" | "print" | "eprintln" | "eprint") {
+        // A test's output is its failure context, not logging: test code
+        // (a `mod tests` block, a crate's `tests/`) is exempt, as for unwrap.
+        if matches!(name, "println" | "print" | "eprintln" | "eprint")
+            && !is_test_file(ctx.file_path)
+            && !is_in_test_module(node, ctx.source)
+        {
             ctx.report(node, "no-println", format!("Unexpected `{name}!()` macro, use a logging framework"));
         }
     })

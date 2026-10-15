@@ -197,6 +197,51 @@ mod tests {
         assert!(issues.iter().any(|i| i.rule == "no-unwrap"));
     }
 
+    fn lint_rs_at(path: &str, source: &str) -> Vec<Issue> {
+        let config = CodopsyConfig::default();
+        let tree = parse_source(source, SourceLanguage::Rust).unwrap();
+        lint_file(path, source, &tree, &config, SourceLanguage::Rust)
+    }
+
+    /// A scratch crate: `Cargo.toml` at its root, so its `tests/` is Cargo's.
+    fn scratch_crate(tag: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("codopsy-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("tests/common")).unwrap();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+        root
+    }
+
+    #[test]
+    fn rust_unwrap_in_a_cargo_tests_dir_is_test_code() {
+        let src = "#[test]\nfn t() { let x = Some(1).unwrap(); }";
+        let root = scratch_crate("testsdir");
+        for rel in ["tests/foo_test.rs", "tests/common/mod.rs"] {
+            let path = root.join(rel).to_string_lossy().to_string();
+            let issues = lint_rs_at(&path, src);
+            assert!(!issues.iter().any(|i| i.rule == "no-unwrap"), "{rel}: an integration test is test code");
+        }
+        let path = root.join("src/lib.rs").to_string_lossy().to_string();
+        assert!(lint_rs_at(&path, src).iter().any(|i| i.rule == "no-unwrap"), "src/ is not test code");
+        // A `tests` directory with no crate beside it: an absolute path that
+        // merely passes through one is not test code.
+        let stray = std::env::temp_dir().join(format!("codopsy-stray-{}", std::process::id())).join("tests/proj/src/lib.rs");
+        assert!(lint_rs_at(&stray.to_string_lossy(), src).iter().any(|i| i.rule == "no-unwrap"), "no crate beside that tests/");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn rust_println_in_test_code_is_not_reported() {
+        let in_module = "fn f() {}\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() { println!(\"x\"); }\n}";
+        assert!(!lint_rs(in_module).iter().any(|i| i.rule == "no-println"), "a mod tests block is test code");
+        let root = scratch_crate("println");
+        let path = root.join("tests/print_test.rs").to_string_lossy().to_string();
+        assert!(!lint_rs_at(&path, "#[test]\nfn t() { eprintln!(\"x\"); }").iter().any(|i| i.rule == "no-println"), "tests/ is test code");
+        let src = root.join("src/lib.rs").to_string_lossy().to_string();
+        assert!(lint_rs_at(&src, "fn f() { println!(\"x\"); }").iter().any(|i| i.rule == "no-println"), "src/ still reports");
+        std::fs::remove_dir_all(root).ok();
+    }
+
     #[test]
     fn detects_rust_dbg() {
         let issues = lint_rs("fn main() { dbg!(42); }");
