@@ -93,7 +93,12 @@ pub fn check_no_println(tree: &Tree, source: &[u8], fp: &str, sev: Severity) -> 
         }
         let Some(m) = node.child_by_field_name("macro") else { return };
         let name = node_text(&m, ctx.source);
-        if matches!(name, "println" | "print" | "eprintln" | "eprint") {
+        // A test's output is its failure context, not logging: test code
+        // (a `mod tests` block, a crate's `tests/`) is exempt, as for unwrap.
+        if matches!(name, "println" | "print" | "eprintln" | "eprint")
+            && !is_test_file(ctx.file_path)
+            && !is_in_test_module(node, ctx.source)
+        {
             ctx.report(node, "no-println", format!("Unexpected `{name}!()` macro, use a logging framework"));
         }
     })
