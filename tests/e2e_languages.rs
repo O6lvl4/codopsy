@@ -45,6 +45,17 @@ fn fixture_path(name: &str) -> String {
     path.to_string_lossy().to_string()
 }
 
+/// A copy of the fixture under a scratch `src/`: the fixtures sit in this
+/// crate's `tests/`, which codopsy reads as test code, and a fixture stands
+/// for ordinary source.
+fn as_ordinary_source(filename: &str, path: &str) -> String {
+    let scratch = std::env::temp_dir().join(format!("codopsy-e2e-{}", std::process::id())).join("src");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let copy = scratch.join(filename);
+    std::fs::copy(path, &copy).unwrap();
+    copy.to_string_lossy().to_string()
+}
+
 fn run_fixture(filename: &str) {
     let path = fixture_path(filename);
     let source = std::fs::read_to_string(&path)
@@ -56,7 +67,7 @@ fn run_fixture(filename: &str) {
     );
 
     let config = CodopsyConfig::default();
-    let analysis = analyze_file(&path, &config);
+    let analysis = analyze_file(&as_ordinary_source(filename, &path), &config);
     let fired: HashSet<String> = analysis.issues.iter().map(|i| i.rule.clone()).collect();
 
     let mut missing: Vec<&String> = expected.difference(&fired).collect();
@@ -74,7 +85,7 @@ fn run_fixture(filename: &str) {
 fn run_clean_fixture(filename: &str) {
     let path = fixture_path(filename);
     let config = CodopsyConfig::default();
-    let analysis = analyze_file(&path, &config);
+    let analysis = analyze_file(&as_ordinary_source(filename, &path), &config);
     let fired: Vec<&String> = analysis
         .issues
         .iter()
