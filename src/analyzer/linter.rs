@@ -231,6 +231,18 @@ mod tests {
     }
 
     #[test]
+    fn rust_println_in_test_code_is_not_reported() {
+        let in_module = "fn f() {}\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() { println!(\"x\"); }\n}";
+        assert!(!lint_rs(in_module).iter().any(|i| i.rule == "no-println"), "a mod tests block is test code");
+        let root = scratch_crate("println");
+        let path = root.join("tests/print_test.rs").to_string_lossy().to_string();
+        assert!(!lint_rs_at(&path, "#[test]\nfn t() { eprintln!(\"x\"); }").iter().any(|i| i.rule == "no-println"), "tests/ is test code");
+        let src = root.join("src/lib.rs").to_string_lossy().to_string();
+        assert!(lint_rs_at(&src, "fn f() { println!(\"x\"); }").iter().any(|i| i.rule == "no-println"), "src/ still reports");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
     fn detects_rust_dbg() {
         let issues = lint_rs("fn main() { dbg!(42); }");
         assert!(issues.iter().any(|i| i.rule == "no-dbg"));
